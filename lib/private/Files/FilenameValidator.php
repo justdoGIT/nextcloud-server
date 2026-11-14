@@ -5,8 +5,10 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OC\Files;
 
+use OCP\Constants;
 use OCP\Files\EmptyFileNameException;
 use OCP\Files\FileNameTooLongException;
 use OCP\Files\IFilenameValidator;
@@ -126,10 +128,7 @@ class FilenameValidator implements IFilenameValidator {
 	public function getForbiddenCharacters(): array {
 		if (empty($this->forbiddenCharacters)) {
 			// Get always forbidden characters
-			$forbiddenCharacters = str_split(\OCP\Constants::FILENAME_INVALID_CHARS);
-			if ($forbiddenCharacters === false) {
-				$forbiddenCharacters = [];
-			}
+			$forbiddenCharacters = str_split(Constants::FILENAME_INVALID_CHARS);
 
 			// Get admin defined invalid characters
 			$additionalChars = $this->config->getSystemValue('forbidden_filename_characters', []);
@@ -159,10 +158,11 @@ class FilenameValidator implements IFilenameValidator {
 	/**
 	 * @inheritdoc
 	 */
+	#[\Override]
 	public function isFilenameValid(string $filename): bool {
 		try {
 			$this->validateFilename($filename);
-		} catch (\OCP\Files\InvalidPathException) {
+		} catch (InvalidPathException) {
 			return false;
 		}
 		return true;
@@ -171,6 +171,7 @@ class FilenameValidator implements IFilenameValidator {
 	/**
 	 * @inheritdoc
 	 */
+	#[\Override]
 	public function validateFilename(string $filename): void {
 		$trimmed = trim($filename);
 		if ($trimmed === '') {
@@ -180,7 +181,7 @@ class FilenameValidator implements IFilenameValidator {
 		// the special directories . and .. would cause never ending recursion
 		// we check the trimmed name here to ensure unexpected trimming will not cause severe issues
 		if ($trimmed === '.' || $trimmed === '..') {
-			throw new InvalidDirectoryException($this->l10n->t('Dot files are not allowed'));
+			throw new InvalidDirectoryException($this->l10n->t('Filenames that begin with a dot are not allowed'));
 		}
 
 		// 255 characters is the limit on common file systems (ext/xfs)
@@ -223,7 +224,7 @@ class FilenameValidator implements IFilenameValidator {
 
 		// Check for forbidden filenames
 		$forbiddenNames = $this->getForbiddenFilenames();
-		if (in_array($filename, $forbiddenNames)) {
+		if (in_array($filename, $forbiddenNames, true)) {
 			return true;
 		}
 
@@ -231,7 +232,46 @@ class FilenameValidator implements IFilenameValidator {
 		return false;
 	}
 
-	protected function checkForbiddenName($filename): void {
+	#[\Override]
+	public function sanitizeFilename(string $name, ?string $charReplacement = null): string {
+		$forbiddenCharacters = $this->getForbiddenCharacters();
+
+		if ($charReplacement === null) {
+			$charReplacement = array_diff(['_', '-', ' '], $forbiddenCharacters);
+			$charReplacement = reset($charReplacement) ?: '';
+		}
+		if (mb_strlen($charReplacement) !== 1) {
+			throw new \InvalidArgumentException('No or invalid character replacement given');
+		}
+
+		$nameLowercase = mb_strtolower($name);
+		foreach ($this->getForbiddenExtensions() as $extension) {
+			if (str_ends_with($nameLowercase, $extension)) {
+				$name = substr($name, 0, strlen($name) - strlen($extension));
+			}
+		}
+
+		$basename = strlen($name) > 1
+			? substr($name, 0, strpos($name, '.', 1) ?: null)
+			: $name;
+		if (in_array(mb_strtolower($basename), $this->getForbiddenBasenames(), true)) {
+			$name = str_replace($basename, $this->l10n->t('%1$s (renamed)', [$basename]), $name);
+		}
+
+		if ($name === '') {
+			$name = $this->l10n->t('renamed file');
+		}
+
+		if (in_array(mb_strtolower($name), $this->getForbiddenFilenames(), true)) {
+			$name = $this->l10n->t('%1$s (renamed)', [$name]);
+		}
+
+		$name = str_replace($forbiddenCharacters, $charReplacement, $name);
+		return $name;
+	}
+
+	protected function checkForbiddenName(string $filename): void {
+		$filename = mb_strtolower($filename);
 		if ($this->isForbidden($filename)) {
 			throw new ReservedWordException($this->l10n->t('"%1$s" is a forbidden file or folder name.', [$filename]));
 		}
@@ -240,11 +280,10 @@ class FilenameValidator implements IFilenameValidator {
 		// (except if the dot is the first character as this is then part of the basename "hidden files")
 		$basename = substr($filename, 0, strpos($filename, '.', 1) ?: null);
 		$forbiddenNames = $this->getForbiddenBasenames();
-		if (in_array($basename, $forbiddenNames)) {
+		if (in_array($basename, $forbiddenNames, true)) {
 			throw new ReservedWordException($this->l10n->t('"%1$s" is a forbidden prefix for file or folder names.', [$filename]));
 		}
 	}
-
 
 	/**
 	 * Check if a filename contains any of the forbidden characters
@@ -295,6 +334,6 @@ class FilenameValidator implements IFilenameValidator {
 			$values = $fallback;
 		}
 
-		return array_map('mb_strtolower', $values);
+		return array_map(mb_strtolower(...), $values);
 	}
 };

@@ -5,6 +5,7 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCP;
 
 /**
@@ -16,20 +17,20 @@ interface ITempManager {
 	/**
 	 * Create a temporary file and return the path
 	 *
-	 * @param string $postFix
-	 * @return string
+	 * @param string $postFix Postfix appended to the temporary file name
+	 *
 	 * @since 8.0.0
 	 */
-	public function getTemporaryFile($postFix = '');
+	public function getTemporaryFile(string $postFix = ''): string|false;
 
 	/**
 	 * Create a temporary folder and return the path
 	 *
-	 * @param string $postFix
-	 * @return string
+	 * @param string $postFix Postfix appended to the temporary folder name
+	 *
 	 * @since 8.0.0
 	 */
-	public function getTemporaryFolder($postFix = '');
+	public function getTemporaryFolder(string $postFix = ''): string|false;
 
 	/**
 	 * Remove the temporary files and folders generated during this request

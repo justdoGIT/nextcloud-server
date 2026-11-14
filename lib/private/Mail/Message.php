@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OC\Mail;
 
 use OCP\Mail\Headers\AutoSubmitted;
@@ -39,6 +40,7 @@ class Message implements IMessage {
 	 * @since 13.0.0
 	 * @return $this
 	 */
+	#[\Override]
 	public function attach(IAttachment $attachment): IMessage {
 		/** @var Attachment $attachment */
 		$attachment->attach($this->symfonyEmail);
@@ -50,19 +52,20 @@ class Message implements IMessage {
 	 * {@inheritDoc}
 	 * @since 26.0.0
 	 */
+	#[\Override]
 	public function attachInline(string $body, string $name, ?string $contentType = null): IMessage {
 		# To be sure this works with iCalendar messages, we encode with 8bit instead of
 		# quoted-printable encoding. We save the current encoder, replace the current
 		# encoder with an 8bit encoder and after we've finished, we reset the encoder
 		# to the previous one. Originally intended to be added after the message body,
-		# as it is curently unknown if all mail clients handle this properly if added
+		# as it is currently unknown if all mail clients handle this properly if added
 		# before.
 		$this->symfonyEmail->embed($body, $name, $contentType);
 		return $this;
 	}
 
 	/**
-	 * Converts the [['displayName' => 'email'], ['displayName2' => 'email2']] arrays to valid Adresses
+	 * Converts the [['displayName' => 'email'], ['displayName2' => 'email2']] arrays to valid Addresses
 	 *
 	 * @param array $addresses Array of mail addresses
 	 * @return Address[]
@@ -75,7 +78,7 @@ class Message implements IMessage {
 			return [];
 		}
 
-		array_walk($addresses, function ($readableName, $email) use (&$convertedAddresses) {
+		array_walk($addresses, function ($readableName, $email) use (&$convertedAddresses): void {
 			if (is_numeric($email)) {
 				$convertedAddresses[] = new Address($readableName);
 			} else {
@@ -94,6 +97,7 @@ class Message implements IMessage {
 	 * @param array $addresses Example: array('sender@domain.org', 'other@domain.org' => 'A name')
 	 * @return $this
 	 */
+	#[\Override]
 	public function setFrom(array $addresses): IMessage {
 		$this->from = $addresses;
 		return $this;
@@ -110,6 +114,7 @@ class Message implements IMessage {
 	 * Set the Reply-To address of this message
 	 * @return $this
 	 */
+	#[\Override]
 	public function setReplyTo(array $addresses): IMessage {
 		$this->replyTo = $addresses;
 		return $this;
@@ -128,6 +133,7 @@ class Message implements IMessage {
 	 * @param array $recipients Example: array('recipient@domain.org', 'other@domain.org' => 'A name')
 	 * @return $this
 	 */
+	#[\Override]
 	public function setTo(array $recipients): IMessage {
 		$this->to = $recipients;
 		return $this;
@@ -146,6 +152,7 @@ class Message implements IMessage {
 	 * @param array $recipients Example: array('recipient@domain.org', 'other@domain.org' => 'A name')
 	 * @return $this
 	 */
+	#[\Override]
 	public function setCc(array $recipients): IMessage {
 		$this->cc = $recipients;
 		return $this;
@@ -164,6 +171,7 @@ class Message implements IMessage {
 	 * @param array $recipients Example: array('recipient@domain.org', 'other@domain.org' => 'A name')
 	 * @return $this
 	 */
+	#[\Override]
 	public function setBcc(array $recipients): IMessage {
 		$this->bcc = $recipients;
 		return $this;
@@ -179,6 +187,7 @@ class Message implements IMessage {
 	/**
 	 * @return $this
 	 */
+	#[\Override]
 	public function setSubject(string $subject): IMessage {
 		$this->symfonyEmail->subject($subject);
 		return $this;
@@ -194,6 +203,7 @@ class Message implements IMessage {
 	/**
 	 * @return $this
 	 */
+	#[\Override]
 	public function setPlainBody(string $body): IMessage {
 		$this->symfonyEmail->text($body);
 		return $this;
@@ -211,6 +221,7 @@ class Message implements IMessage {
 	/**
 	 * @return $this
 	 */
+	#[\Override]
 	public function setHtmlBody(string $body): IMessage {
 		if (!$this->plainTextOnly) {
 			$this->symfonyEmail->html($body);
@@ -275,11 +286,19 @@ class Message implements IMessage {
 	/**
 	 * @return $this
 	 */
+	#[\Override]
 	public function useTemplate(IEMailTemplate $emailTemplate): IMessage {
 		$this->setSubject($emailTemplate->renderSubject());
 		$this->setPlainBody($emailTemplate->renderText());
 		if (!$this->plainTextOnly) {
-			$this->setHtmlBody($emailTemplate->renderHtml());
+			if ($emailTemplate instanceof EMailTemplate) {
+				$this->setHtmlBody($emailTemplate->renderHtmlWithInlineImages());
+				foreach ($emailTemplate->getInlineImages() as $image) {
+					$this->attachInline($image['content'], $image['name'], $image['mimeType']);
+				}
+			} else {
+				$this->setHtmlBody($emailTemplate->renderHtml());
+			}
 		}
 		return $this;
 	}
@@ -291,11 +310,12 @@ class Message implements IMessage {
 	 * @param AutoSubmitted::VALUE_* $value (one of AutoSubmitted::VALUE_NO, AutoSubmitted::VALUE_AUTO_GENERATED, AutoSubmitted::VALUE_AUTO_REPLIED)
 	 * @return $this
 	 */
+	#[\Override]
 	public function setAutoSubmitted(string $value): IMessage {
 		$headers = $this->symfonyEmail->getHeaders();
 
 		if ($headers->has(AutoSubmitted::HEADER)) {
-			// if the header already exsists, remove it.
+			// if the header already exists, remove it.
 			// the value can be modified with some implementations
 			// of the interface \Swift_Mime_Header, however the
 			// interface doesn't, and this makes the static-code
@@ -316,7 +336,7 @@ class Message implements IMessage {
 	public function getAutoSubmitted(): string {
 		$headers = $this->symfonyEmail->getHeaders();
 
-		return $headers->has(AutoSubmitted::HEADER) ?
-			$headers->get(AutoSubmitted::HEADER)->getBodyAsString() : AutoSubmitted::VALUE_NO;
+		return $headers->has(AutoSubmitted::HEADER)
+			? $headers->get(AutoSubmitted::HEADER)->getBodyAsString() : AutoSubmitted::VALUE_NO;
 	}
 }

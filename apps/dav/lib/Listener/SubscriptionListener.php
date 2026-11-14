@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2022 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Listener;
 
 use OCA\DAV\BackgroundJob\RefreshWebcalJob;
@@ -20,22 +21,18 @@ use Psr\Log\LoggerInterface;
 
 /** @template-implements IEventListener<SubscriptionCreatedEvent|SubscriptionDeletedEvent> */
 class SubscriptionListener implements IEventListener {
-	private IJobList $jobList;
-	private RefreshWebcalService $refreshWebcalService;
-	private ReminderBackend $reminderBackend;
-	private LoggerInterface $logger;
-
-	public function __construct(IJobList $jobList, RefreshWebcalService $refreshWebcalService, ReminderBackend $reminderBackend,
-		LoggerInterface $logger) {
-		$this->jobList = $jobList;
-		$this->refreshWebcalService = $refreshWebcalService;
-		$this->reminderBackend = $reminderBackend;
-		$this->logger = $logger;
+	public function __construct(
+		private IJobList $jobList,
+		private RefreshWebcalService $refreshWebcalService,
+		private ReminderBackend $reminderBackend,
+		private LoggerInterface $logger,
+	) {
 	}
 
 	/**
 	 * In case the user has set their default calendar to the deleted one
 	 */
+	#[\Override]
 	public function handle(Event $event): void {
 		if ($event instanceof SubscriptionCreatedEvent) {
 			$subscriptionId = $event->getSubscriptionId();

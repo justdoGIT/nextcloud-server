@@ -4,11 +4,12 @@
  */
 
 import type { Node } from '@nextcloud/files'
-import { emit } from '@nextcloud/event-bus'
+
 import { getFilePickerBuilder } from '@nextcloud/dialogs'
-import { imagePath } from '@nextcloud/router'
+import { emit } from '@nextcloud/event-bus'
 import { translate as t } from '@nextcloud/l10n'
-import logger from '../../logger'
+import { imagePath } from '@nextcloud/router'
+import { logger } from '../../utils/logger.ts'
 
 /**
  * Initialize the unified search plugin.
@@ -21,29 +22,40 @@ function init() {
 
 	logger.info('Initializing unified search plugin: folder search from files app')
 	OCA.UnifiedSearch.registerFilterAction({
-		id: 'files',
+		id: 'in-folder',
 		appId: 'files',
+		searchFrom: 'files',
 		label: t('files', 'In folder'),
 		icon: imagePath('files', 'app.svg'),
-		callback: () => {
-			const filepicker = getFilePickerBuilder('Pick plain text files')
-				.addMimeTypeFilter('httpd/unix-directory')
-				.allowDirectories(true)
-				.addButton({
-					label: 'Pick',
-					callback: (nodes: Node[]) => {
-						logger.info('Folder picked', { folder: nodes[0] })
-						const folder = nodes[0]
-						emit('nextcloud:unified-search:add-filter', {
-							id: 'files',
-							payload: folder,
-							filterUpdateText: t('files', 'Search in folder: {folder}', { folder: folder.basename }),
-							filterParams: { path: folder.path },
-						})
-					},
-				})
-				.build()
-			filepicker.pick()
+		callback: (showFilePicker: boolean = true) => {
+			if (showFilePicker) {
+				const filepicker = getFilePickerBuilder(t('files', 'Pick folder to search in'))
+					.setNoMenu(true)
+					.addMimeTypeFilter('httpd/unix-directory')
+					.allowDirectories(true)
+					.addButton({
+						label: 'Pick',
+						callback: (nodes: Node[]) => {
+							logger.info('Folder picked', { folder: nodes[0] })
+							const folder = nodes[0]
+							const filterUpdateText = (folder.root === '/files/' + folder.basename)
+								? t('files', 'Search in all files')
+								: t('files', 'Search in folder: {folder}', { folder: folder.basename })
+							emit('nextcloud:unified-search:add-filter', {
+								id: 'in-folder',
+								appId: 'files',
+								searchFrom: 'files',
+								payload: folder,
+								filterUpdateText,
+								filterParams: { path: folder.path },
+							})
+						},
+					})
+					.build()
+				filepicker.pick()
+			} else {
+				logger.debug('Folder search callback was handled without showing the file picker, it might already be open')
+			}
 		},
 	})
 }

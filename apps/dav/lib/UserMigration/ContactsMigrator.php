@@ -37,29 +37,22 @@ class ContactsMigrator implements IMigrator, ISizeEstimationMigrator {
 
 	use TMigratorBasicVersionHandling;
 
-	private CardDavBackend $cardDavBackend;
-
-	private IL10N $l10n;
-
 	private SabreDavServer $sabreDavServer;
 
-	private const USERS_URI_ROOT = 'principals/users/';
+	private const string USERS_URI_ROOT = 'principals/users/';
 
-	private const FILENAME_EXT = 'vcf';
+	private const string FILENAME_EXT = 'vcf';
 
-	private const METADATA_EXT = 'json';
+	private const string METADATA_EXT = 'json';
 
-	private const MIGRATED_URI_PREFIX = 'migrated-';
+	private const string MIGRATED_URI_PREFIX = 'migrated-';
 
-	private const PATH_ROOT = Application::APP_ID . '/address_books/';
+	private const string PATH_ROOT = Application::APP_ID . '/address_books/';
 
 	public function __construct(
-		CardDavBackend $cardDavBackend,
-		IL10N $l10n,
+		private CardDavBackend $cardDavBackend,
+		private IL10N $l10n,
 	) {
-		$this->cardDavBackend = $cardDavBackend;
-		$this->l10n = $l10n;
-
 		$root = new RootCollection();
 		$this->sabreDavServer = new SabreDavServer(new CachingTree($root));
 		$this->sabreDavServer->addPlugin(new CardDAVPlugin());
@@ -186,6 +179,7 @@ class ContactsMigrator implements IMigrator, ISizeEstimationMigrator {
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function getEstimatedExportSize(IUser $user): int|float {
 		$addressBookExports = $this->getAddressBookExports($user, new NullOutput());
 		$addressBookCount = count($addressBookExports);
@@ -207,6 +201,7 @@ class ContactsMigrator implements IMigrator, ISizeEstimationMigrator {
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function export(IUser $user, IExportDestination $exportDestination, OutputInterface $output): void {
 		$output->writeln('Exporting contacts into ' . ContactsMigrator::PATH_ROOT . '…');
 
@@ -317,6 +312,7 @@ class ContactsMigrator implements IMigrator, ISizeEstimationMigrator {
 	 *
 	 * @throws ContactsMigratorException
 	 */
+	#[\Override]
 	public function import(IUser $user, IImportSource $importSource, OutputInterface $output): void {
 		if ($importSource->getMigratorVersion($this->getId()) === null) {
 			$output->writeln('No version for ' . static::class . ', skipping import…');
@@ -384,6 +380,7 @@ class ContactsMigrator implements IMigrator, ISizeEstimationMigrator {
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function getId(): string {
 		return 'contacts';
 	}
@@ -391,6 +388,7 @@ class ContactsMigrator implements IMigrator, ISizeEstimationMigrator {
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function getDisplayName(): string {
 		return $this->l10n->t('Contacts');
 	}
@@ -398,6 +396,7 @@ class ContactsMigrator implements IMigrator, ISizeEstimationMigrator {
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function getDescription(): string {
 		return $this->l10n->t('Contacts and groups');
 	}

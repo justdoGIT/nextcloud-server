@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2020 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\WeatherStatus\Controller;
 
 use OCA\WeatherStatus\ResponseDefinitions;
@@ -93,7 +94,7 @@ class WeatherStatusController extends OCSController {
 	/**
 	 * Get forecast for current location
 	 *
-	 * @return DataResponse<Http::STATUS_OK, WeatherStatusForecast[]|array{error: string}, array{}>|DataResponse<Http::STATUS_NOT_FOUND, WeatherStatusSuccess, array{}>
+	 * @return DataResponse<Http::STATUS_OK, list<WeatherStatusForecast>|array{error: string}, array{}>|DataResponse<Http::STATUS_NOT_FOUND, WeatherStatusSuccess, array{}>
 	 *
 	 * 200: Forecast returned
 	 * 404: Forecast not found
@@ -111,7 +112,7 @@ class WeatherStatusController extends OCSController {
 	/**
 	 * Get favorites list
 	 *
-	 * @return DataResponse<Http::STATUS_OK, string[], array{}>
+	 * @return DataResponse<Http::STATUS_OK, list<string>, array{}>
 	 *
 	 * 200: Favorites returned
 	 */
@@ -123,7 +124,7 @@ class WeatherStatusController extends OCSController {
 	/**
 	 * Set favorites list
 	 *
-	 * @param string[] $favorites Favorite addresses
+	 * @param list<string> $favorites Favorite addresses
 	 * @return DataResponse<Http::STATUS_OK, WeatherStatusSuccess, array{}>
 	 *
 	 * 200: Favorites updated

@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2018 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\BackgroundJob;
 
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -14,23 +15,23 @@ use OCP\IDBConnection;
 
 class CleanupInvitationTokenJob extends TimedJob {
 
-	/** @var IDBConnection */
-	private $db;
-
-	public function __construct(IDBConnection $db, ITimeFactory $time) {
+	public function __construct(
+		private IDBConnection $db,
+		ITimeFactory $time,
+	) {
 		parent::__construct($time);
-		$this->db = $db;
 
 		// Run once a day at off-peak time
 		$this->setInterval(24 * 60 * 60);
 		$this->setTimeSensitivity(self::TIME_INSENSITIVE);
 	}
 
-	public function run($argument) {
+	#[\Override]
+	public function run($argument): void {
 		$query = $this->db->getQueryBuilder();
 		$query->delete('calendar_invitations')
 			->where($query->expr()->lt('expiration',
 				$query->createNamedParameter($this->time->getTime())))
-			->execute();
+			->executeStatement();
 	}
 }

@@ -6,8 +6,11 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2019 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCP\User\Events;
 
+use OCP\AppFramework\Attribute\Dispatchable;
+use OCP\AppFramework\Attribute\Listenable;
 use OCP\EventDispatcher\Event;
 use OCP\IUser;
 
@@ -16,21 +19,17 @@ use OCP\IUser;
  *
  * @since 18.0.0
  */
+#[Listenable(since: '18.0.0')]
+#[Dispatchable(since: '18.0.0')]
 class UserCreatedEvent extends Event {
-	/** @var IUser */
-	private $user;
-
-	/** @var string */
-	private $password;
-
 	/**
 	 * @since 18.0.0
 	 */
-	public function __construct(IUser $user,
-		string $password) {
+	public function __construct(
+		private readonly IUser $user,
+		private readonly string $password,
+	) {
 		parent::__construct();
-		$this->user = $user;
-		$this->password = $password;
 	}
 
 	/**

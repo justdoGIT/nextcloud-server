@@ -6,7 +6,11 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2017 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCP\Calendar;
+
+use DateTimeInterface;
+use OCP\IUser;
 
 /**
  * This class provides access to the Nextcloud CalDAV backend.
@@ -138,6 +142,24 @@ interface IManager {
 	public function newQuery(string $principalUri) : ICalendarQuery;
 
 	/**
+	 * Handles a iMip message
+	 *
+	 * @param array{absent?: "create"|"ignore", absentCreateStatus?: "cancelled"|"confirmed"|"tentative", recipient?: string, ...} $options
+	 *
+	 * @throws \OCP\DB\Exception
+	 *
+	 * @since 32.0.0
+	 */
+	public function handleIMip(string $userId, string $message, array $options = []): bool;
+
+	/**
+	 * Handle a iMip REQUEST message
+	 *
+	 * @since 31.0.0
+	 */
+	public function handleIMipRequest(string $principalUri, string $sender, string $recipient, string $calendarData): bool;
+
+	/**
 	 * Handle a iMip REPLY message
 	 *
 	 * @since 25.0.0
@@ -150,4 +172,28 @@ interface IManager {
 	 * @since 25.0.0
 	 */
 	public function handleIMipCancel(string $principalUri, string $sender, ?string $replyTo, string $recipient, string $calendarData): bool;
+
+	/**
+	 * Create a new event builder instance. Please have a look at its documentation and the
+	 * \OCP\Calendar\ICreateFromString interface on how to use it.
+	 *
+	 * @since 31.0.0
+	 */
+	public function createEventBuilder(): ICalendarEventBuilder;
+
+	/**
+	 * Check the availability of the given organizer and attendees in the given time range.
+	 *
+	 * @since 31.0.0
+	 *
+	 * @param IUser $organizer The organizing user from whose perspective to do the availability check.
+	 * @param string[] $attendees Email addresses of attendees to check for (with or without a "mailto:" prefix). Only users on this instance can be checked. The rest will be silently ignored.
+	 * @return IAvailabilityResult[] Availabilities of the organizer and all attendees which are also users on this instance. As such, the array might not contain an entry for each given attendee.
+	 */
+	public function checkAvailability(
+		DateTimeInterface $start,
+		DateTimeInterface $end,
+		IUser $organizer,
+		array $attendees,
+	): array;
 }

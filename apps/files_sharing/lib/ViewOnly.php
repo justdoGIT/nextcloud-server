@@ -1,4 +1,5 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2022 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2019 ownCloud GmbH
@@ -11,31 +12,38 @@ use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\Node;
 use OCP\Files\NotFoundException;
+use OCP\Share\IShare;
 
 /**
  * Handles restricting for download of files
  */
 class ViewOnly {
 
-	/** @var Folder */
-	private $userFolder;
-
-	public function __construct(Folder $userFolder) {
-		$this->userFolder = $userFolder;
+	public function __construct(
+		private ?Folder $folder,
+	) {
 	}
 
 	/**
-	 * @param string[] $pathsToCheck
+	 * @param string[] $pathsToCheck paths to check, relative to the given folder
 	 * @return bool
 	 */
 	public function check(array $pathsToCheck): bool {
+		if ($this->folder === null) {
+			throw new \LogicException('Folder is not set but this check requires it.');
+		}
+
+		if (empty($pathsToCheck)) {
+			return $this->dirRecursiveCheck($this->folder);
+		}
+
 		// If any of elements cannot be downloaded, prevent whole download
 		foreach ($pathsToCheck as $file) {
 			try {
-				$info = $this->userFolder->get($file);
+				$info = $this->folder->get($file);
 				if ($info instanceof File) {
 					// access to filecache is expensive in the loop
-					if (!$this->checkFileInfo($info)) {
+					if (!$this->isDownloadable($info)) {
 						return false;
 					}
 				} elseif ($info instanceof Folder) {
@@ -44,7 +52,7 @@ class ViewOnly {
 						return false;
 					}
 				}
-			} catch (NotFoundException $e) {
+			} catch (NotFoundException) {
 				continue;
 			}
 		}
@@ -57,51 +65,54 @@ class ViewOnly {
 	 * @throws NotFoundException
 	 */
 	private function dirRecursiveCheck(Folder $dirInfo): bool {
-		if (!$this->checkFileInfo($dirInfo)) {
+		if (!$this->isDownloadable($dirInfo)) {
 			return false;
 		}
 		// If any of elements cannot be downloaded, prevent whole download
 		$files = $dirInfo->getDirectoryListing();
 		foreach ($files as $file) {
 			if ($file instanceof File) {
-				if (!$this->checkFileInfo($file)) {
+				if (!$this->isDownloadable($file)) {
 					return false;
 				}
 			} elseif ($file instanceof Folder) {
-				return $this->dirRecursiveCheck($file);
+				if (!$this->dirRecursiveCheck($file)) {
+					return false;
+				}
 			}
 		}
 
 		return true;
 	}
 
+	public function isDownloadable(Node $fileInfo): bool {
+		try {
+			return self::canDownloadThroughMount($fileInfo);
+		} catch (NotFoundException) {
+			return true;
+		}
+	}
+
 	/**
-	 * @param Node $fileInfo
-	 * @return bool
+	 * Whether the node can be downloaded through the mount it is accessed by,
+	 * which for share mounts requires one of the received shares to allow it.
+	 *
+	 * @param ?callable(IShare): bool $allowsDownload whether a received share allows downloads, defaults to its download attribute
 	 * @throws NotFoundException
 	 */
-	private function checkFileInfo(Node $fileInfo): bool {
-		// Restrict view-only to nodes which are shared
-		$storage = $fileInfo->getStorage();
-		if (!$storage->instanceOfStorage(SharedStorage::class)) {
+	public static function canDownloadThroughMount(Node $node, ?callable $allowsDownload = null): bool {
+		$mount = $node->getMountPoint();
+		if (!$mount instanceof SharedMount) {
 			return true;
 		}
 
-		// Extract extra permissions
-		/** @var SharedStorage $storage */
-		$share = $storage->getShare();
-
-		$canDownload = true;
-
-		// Check if read-only and on whether permission can download is both set and disabled.
-		$attributes = $share->getAttributes();
-		if ($attributes !== null) {
-			$canDownload = $attributes->getAttribute('permissions', 'download');
+		$allowsDownload ??= static fn (IShare $share): bool => $share->getAttributes()?->getAttribute('permissions', 'download') !== false;
+		foreach ($mount->getGroupedShares() as $share) {
+			if ($allowsDownload($share)) {
+				return true;
+			}
 		}
 
-		if ($canDownload !== null && !$canDownload) {
-			return false;
-		}
-		return true;
+		return false;
 	}
 }

@@ -6,36 +6,30 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2019 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCP\User\Events;
 
+use OCP\AppFramework\Attribute\Dispatchable;
+use OCP\AppFramework\Attribute\Listenable;
 use OCP\EventDispatcher\Event;
 use OCP\IUser;
 
 /**
  * @since 18.0.0
  */
+#[Listenable(since: '18.0.0')]
+#[Dispatchable(since: '18.0.0')]
 class UserLoggedInEvent extends Event {
-	/** @var IUser */
-	private $user;
-
-	/** @var string|null */
-	private $password;
-
-	/** @var bool */
-	private $isTokenLogin;
-
-	/** @var string */
-	private $loginName;
-
 	/**
 	 * @since 18.0.0
 	 */
-	public function __construct(IUser $user, string $loginName, ?string $password, bool $isTokenLogin) {
+	public function __construct(
+		private readonly IUser $user,
+		private readonly string $loginName,
+		private readonly ?string $password,
+		private readonly bool $isTokenLogin,
+	) {
 		parent::__construct();
-		$this->user = $user;
-		$this->password = $password;
-		$this->isTokenLogin = $isTokenLogin;
-		$this->loginName = $loginName;
 	}
 
 	/**

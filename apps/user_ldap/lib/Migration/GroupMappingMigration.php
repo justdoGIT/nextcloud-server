@@ -14,11 +14,9 @@ use OCP\Migration\SimpleMigrationStep;
 
 abstract class GroupMappingMigration extends SimpleMigrationStep {
 
-	/** @var IDBConnection */
-	private $dbc;
-
-	public function __construct(IDBConnection $dbc) {
-		$this->dbc = $dbc;
+	public function __construct(
+		private IDBConnection $dbc,
+	) {
 	}
 
 	protected function copyGroupMappingData(string $sourceTable, string $destinationTable): void {
@@ -35,9 +33,8 @@ abstract class GroupMappingMigration extends SimpleMigrationStep {
 		$query->select('*')
 			->from($sourceTable);
 
-
 		$result = $query->executeQuery();
-		while ($row = $result->fetch()) {
+		while ($row = $result->fetchAssociative()) {
 			$insert
 				->setParameter('ldap_dn', $row['ldap_dn'])
 				->setParameter('owncloud_name', $row['owncloud_name'])

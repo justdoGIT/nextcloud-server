@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2020 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Files_External\Listener;
 
 use OCA\Files_External\Lib\Auth\Password\LoginCredentials;
@@ -17,13 +18,12 @@ use OCP\User\Events\UserLoggedInEvent;
 
 /** @template-implements IEventListener<PasswordUpdatedEvent|UserLoggedInEvent> */
 class StorePasswordListener implements IEventListener {
-	/** @var ICredentialsManager */
-	private $credentialsManager;
-
-	public function __construct(ICredentialsManager $credentialsManager) {
-		$this->credentialsManager = $credentialsManager;
+	public function __construct(
+		private ICredentialsManager $credentialsManager,
+	) {
 	}
 
+	#[\Override]
 	public function handle(Event $event): void {
 		if (!$event instanceof UserLoggedInEvent && !$event instanceof PasswordUpdatedEvent) {
 			return;

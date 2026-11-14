@@ -1,23 +1,24 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2018-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Files_Sharing\Tests\External;
 
+use OC\Files\Cache\Cache;
 use OCA\Files_Sharing\External\Scanner;
 use OCA\Files_Sharing\External\Storage;
 use Test\TestCase;
 
-/**
- * @group DB
- */
+#[\PHPUnit\Framework\Attributes\Group(name: 'DB')]
 class ScannerTest extends TestCase {
 	protected Scanner $scanner;
 	/** @var Storage|\PHPUnit\Framework\MockObject\MockObject */
 	protected $storage;
-	/** @var \OC\Files\Cache\Cache|\PHPUnit\Framework\MockObject\MockObject */
+	/** @var Cache|\PHPUnit\Framework\MockObject\MockObject */
 	protected $cache;
 
 	protected function setUp(): void {

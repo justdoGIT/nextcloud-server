@@ -16,27 +16,26 @@ use OCP\Migration\Attributes\AddColumn;
 use OCP\Migration\Attributes\ColumnType;
 use OCP\Migration\IOutput;
 use OCP\Migration\SimpleMigrationStep;
+use Override;
 
 #[AddColumn(table: 'files_trash', name: 'deleted_by', type: ColumnType::STRING)]
 class Version1020Date20240403003535 extends SimpleMigrationStep {
-
-	/**
-	 * @param Closure(): ISchemaWrapper $schemaClosure
-	 */
+	#[Override]
 	public function changeSchema(IOutput $output, Closure $schemaClosure, array $options): ?ISchemaWrapper {
 		/** @var ISchemaWrapper $schema */
 		$schema = $schemaClosure();
 
-		if (!$schema->hasTable('files_trash')) {
-			return null;
+		if ($schema->hasTable('files_trash')) {
+			$table = $schema->getTable('files_trash');
+			if (!$table->hasColumn('deleted_by')) {
+				$table->addColumn('deleted_by', Types::STRING, [
+					'notnull' => false,
+					'length' => 64,
+				]);
+				return $schema;
+			}
 		}
 
-		$table = $schema->getTable('files_trash');
-		$table->addColumn('deleted_by', Types::STRING, [
-			'notnull' => false,
-			'length' => 64,
-		]);
-
-		return $schema;
+		return null;
 	}
 }

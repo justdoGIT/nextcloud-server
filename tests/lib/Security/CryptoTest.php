@@ -11,9 +11,11 @@ declare(strict_types=1);
 namespace Test\Security;
 
 use OC\Security\Crypto;
+use OCP\IConfig;
+use OCP\Server;
 
 class CryptoTest extends \Test\TestCase {
-	public function defaultEncryptionProvider() {
+	public static function defaultEncryptionProvider(): array {
 		return [
 			['Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt.'],
 			[''],
@@ -24,19 +26,17 @@ class CryptoTest extends \Test\TestCase {
 	/** @var Crypto */
 	protected $crypto;
 
+	#[\Override]
 	protected function setUp(): void {
 		parent::setUp();
-		$this->crypto = new Crypto(\OC::$server->getConfig());
+		$this->crypto = new Crypto(Server::get(IConfig::class));
 	}
 
-	/**
-	 * @dataProvider defaultEncryptionProvider
-	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('defaultEncryptionProvider')]
 	public function testDefaultEncrypt($stringToEncrypt): void {
 		$ciphertext = $this->crypto->encrypt($stringToEncrypt);
 		$this->assertEquals($stringToEncrypt, $this->crypto->decrypt($ciphertext));
 	}
-
 
 	public function testWrongPassword(): void {
 		$this->expectException(\Exception::class);
@@ -53,7 +53,6 @@ class CryptoTest extends \Test\TestCase {
 		$this->assertEquals($stringToEncrypt, $this->crypto->decrypt($encryptedString, 'ThisIsAVeryS3cur3P4ssw0rd'));
 	}
 
-
 	public function testWrongIV(): void {
 		$this->expectException(\Exception::class);
 		$this->expectExceptionMessage('HMAC does not match.');
@@ -61,7 +60,6 @@ class CryptoTest extends \Test\TestCase {
 		$encryptedString = '560f5436ba864b9f12f7f7ca6d41c327554a6f2c0a160a03316b202af07c65163274993f3a46e7547c07ba89304f00594a2f3bd99f83859097c58049c39d0d4ade10e0de914ff0604961e7c849d0271ed6c0b23f984ba16e7d033e3305fb0910e7b6a2a65c988d17dbee71d8f953684d|d2kdFUspVjC0o0sr|1a5feacf87eaa6869a6abdfba9a296e7bbad45b6ad89f7dce67cdc98e2da5dc4379cc672cc655e52bbf19599bf59482fbea13a73937697fa656bf10f3fc4f1aa';
 		$this->crypto->decrypt($encryptedString, 'ThisIsAVeryS3cur3P4ssw0rd');
 	}
-
 
 	public function testWrongParameters(): void {
 		$this->expectException(\Exception::class);
@@ -86,6 +84,40 @@ class CryptoTest extends \Test\TestCase {
 				'insecure-static-password'
 			)
 		);
+	}
+
+	/**
+	 * Test data taken from https://github.com/owncloud/core/blob/9deb8196b20354c8de0cd720ad4d18d52ccc96d8/tests/lib/Security/CryptoTest.php#L56-L60
+	 */
+	public function testOcVersion2CiphertextDecryptsToCorrectPlaintext(): void {
+		$this->assertSame(
+			'Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt.',
+			$this->crypto->decrypt(
+				'v2|d57dbe4d1317cdf19d4ddc2df807f6b5d63ab1e119c46590ce54bae56a9cd3969168c4ec1600ac9758dd7e7afb9c4c962dd23072c1463add1d9c77c467723b37bb768ef00e3c50898e59247cbb59ce56b74ce5990648ffe9e40d0e95076c27a785bdcf32c219ea4ad5c316b1f12f48c1|6bd21db258a5e406a2c288a444de195f|a19111a4cf1a11ee95fc1734699c20964eaa05bb007e1cecc4cc6872f827a4b7deedc977c13b138d728d68116aa3d82f9673e20c7e447a9788aa3be994b67cd6',
+				'ThisIsAVeryS3cur3P4ssw0rd'
+			)
+		);
+	}
+
+	public function testDecryptWithWrongSecretThrowsHmacExceptionNotValueError(): void {
+		// Encrypt with 'secret-A'
+		$configA = $this->createMock(IConfig::class);
+		$configA->method('getSystemValue')->with('secret')->willReturn('secret-A');
+		$configA->method('getSystemValueString')->with('secret')->willReturn('secret-A');
+		$cryptoA = new Crypto($configA);
+		$ciphertext = $cryptoA->encrypt('plaintext');
+
+		// Decrypt with 'secret-B': first attempt fails (HMAC mismatch), fallback to empty
+		// string must not propagate a ValueError for v3 ciphertexts — it must rethrow the
+		// original HMAC exception instead.
+		$configB = $this->createMock(IConfig::class);
+		$configB->method('getSystemValue')->with('secret')->willReturn('secret-B');
+		$configB->method('getSystemValueString')->with('secret')->willReturn('secret-B');
+		$cryptoB = new Crypto($configB);
+
+		$this->expectException(\Exception::class);
+		$this->expectExceptionMessage('HMAC does not match.');
+		$cryptoB->decrypt($ciphertext);
 	}
 
 	public function testVersion3CiphertextDecryptsToCorrectPlaintext(): void {

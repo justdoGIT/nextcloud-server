@@ -4,11 +4,12 @@
 -->
 
 <template>
-	<NcDialog can-close
+	<NcDialog
 		class="file-request-dialog"
 		data-cy-file-request-dialog
 		:close-on-click-outside="false"
 		:name="currentStep !== STEP.LAST ? t('files_sharing', 'Create a file request') : t('files_sharing', 'File request created')"
+		:setReturnFocus="returnFocusTarget"
 		size="normal"
 		@closing="onCancel">
 		<!-- Header -->
@@ -20,26 +21,30 @@
 		</NcNoteCard>
 
 		<!-- Main form -->
-		<form ref="form"
+		<form
+			ref="form"
 			class="file-request-dialog__form"
 			aria-describedby="file-request-dialog-description"
 			:aria-label="t('files_sharing', 'File request')"
 			aria-live="polite"
 			data-cy-file-request-dialog-form
 			@submit.prevent.stop="">
-			<FileRequestIntro v-show="currentStep === STEP.FIRST"
+			<FileRequestIntro
+				v-show="currentStep === STEP.FIRST"
+				v-model:destination="destination"
+				v-model:label="label"
+				v-model:note="note"
 				:context="context"
-				:destination.sync="destination"
-				:disabled="loading"
-				:label.sync="label"
-				:note.sync="note" />
+				:disabled="loading" />
 
-			<FileRequestDatePassword v-show="currentStep === STEP.SECOND"
-				:disabled="loading"
-				:expiration-date.sync="expirationDate"
-				:password.sync="password" />
+			<FileRequestDatePassword
+				v-show="currentStep === STEP.SECOND"
+				v-model:expiration-date="expirationDate"
+				v-model:password="password"
+				:disabled="loading" />
 
-			<FileRequestFinish v-if="share"
+			<FileRequestFinish
+				v-if="share"
 				v-show="currentStep === STEP.LAST"
 				:emails="emails"
 				:is-share-by-mail-enabled="isShareByMailEnabled"
@@ -51,11 +56,12 @@
 		<!-- Controls -->
 		<template #actions>
 			<!-- Back -->
-			<NcButton v-show="currentStep === STEP.SECOND"
+			<NcButton
+				v-show="currentStep === STEP.SECOND"
 				:aria-label="t('files_sharing', 'Previous step')"
 				:disabled="loading"
 				data-cy-file-request-dialog-controls="back"
-				type="tertiary"
+				variant="tertiary"
 				@click="currentStep = STEP.FIRST">
 				{{ t('files_sharing', 'Previous step') }}
 			</NcButton>
@@ -64,29 +70,32 @@
 			<span class="dialog__actions-separator" />
 
 			<!-- Cancel the creation -->
-			<NcButton v-if="currentStep !== STEP.LAST"
+			<NcButton
+				v-if="currentStep !== STEP.LAST"
 				:aria-label="t('files_sharing', 'Cancel')"
 				:disabled="loading"
 				:title="t('files_sharing', 'Cancel the file request creation')"
 				data-cy-file-request-dialog-controls="cancel"
-				type="tertiary"
+				variant="tertiary"
 				@click="onCancel">
 				{{ t('files_sharing', 'Cancel') }}
 			</NcButton>
 
 			<!-- Cancel email and just close -->
-			<NcButton v-else-if="emails.length !== 0"
+			<NcButton
+				v-else-if="emails.length !== 0"
 				:aria-label="t('files_sharing', 'Close without sending emails')"
 				:disabled="loading"
 				:title="t('files_sharing', 'Close without sending emails')"
 				data-cy-file-request-dialog-controls="cancel"
-				type="tertiary"
+				variant="tertiary"
 				@click="onCancel">
 				{{ t('files_sharing', 'Close') }}
 			</NcButton>
 
 			<!-- Next -->
-			<NcButton v-if="currentStep !== STEP.LAST"
+			<NcButton
+				v-if="currentStep !== STEP.LAST"
 				:aria-label="t('files_sharing', 'Continue')"
 				:disabled="loading"
 				data-cy-file-request-dialog-controls="next"
@@ -99,11 +108,12 @@
 			</NcButton>
 
 			<!-- Finish -->
-			<NcButton v-else
+			<NcButton
+				v-else
 				:aria-label="finishButtonLabel"
 				:disabled="loading"
 				data-cy-file-request-dialog-controls="finish"
-				type="primary"
+				variant="primary"
 				@click="onFinish">
 				<template #icon>
 					<NcLoadingIcon v-if="loading" />
@@ -121,29 +131,26 @@ import type { Folder, Node } from '@nextcloud/files'
 import type { OCSResponse } from '@nextcloud/typings/ocs'
 import type { PropType } from 'vue'
 
-import { defineComponent } from 'vue'
-import { emit } from '@nextcloud/event-bus'
-import { generateOcsUrl } from '@nextcloud/router'
-import { Permission } from '@nextcloud/files'
-import { ShareType } from '@nextcloud/sharing'
-import { showError, showSuccess } from '@nextcloud/dialogs'
-import { n, t } from '@nextcloud/l10n'
 import axios from '@nextcloud/axios'
-
-import NcButton from '@nextcloud/vue/dist/Components/NcButton.js'
-import NcDialog from '@nextcloud/vue/dist/Components/NcDialog.js'
-import NcLoadingIcon from '@nextcloud/vue/dist/Components/NcLoadingIcon.js'
-import NcNoteCard from '@nextcloud/vue/dist/Components/NcNoteCard.js'
-
-import IconCheck from 'vue-material-design-icons/Check.vue'
+import { showError, showSuccess } from '@nextcloud/dialogs'
+import { emit } from '@nextcloud/event-bus'
+import { Permission } from '@nextcloud/files'
+import { n, t } from '@nextcloud/l10n'
+import { generateOcsUrl } from '@nextcloud/router'
+import { ShareType } from '@nextcloud/sharing'
+import { defineComponent } from 'vue'
+import NcButton from '@nextcloud/vue/components/NcButton'
+import NcDialog from '@nextcloud/vue/components/NcDialog'
+import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
+import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import IconNext from 'vue-material-design-icons/ArrowRight.vue'
-
-import Config from '../services/ConfigService'
+import IconCheck from 'vue-material-design-icons/Check.vue'
 import FileRequestDatePassword from './NewFileRequestDialog/NewFileRequestDialogDatePassword.vue'
 import FileRequestFinish from './NewFileRequestDialog/NewFileRequestDialogFinish.vue'
 import FileRequestIntro from './NewFileRequestDialog/NewFileRequestDialogIntro.vue'
-import logger from '../services/logger'
 import Share from '../models/Share.ts'
+import Config from '../services/ConfigService.ts'
+import logger from '../services/logger.ts'
 
 enum STEP {
 	FIRST = 0,
@@ -173,11 +180,14 @@ export default defineComponent({
 			type: Object as PropType<Folder>,
 			required: true,
 		},
+
 		content: {
 			type: Array as PropType<Node[]>,
 			required: true,
 		},
 	},
+
+	emits: ['close'],
 
 	setup() {
 		return {
@@ -190,11 +200,14 @@ export default defineComponent({
 	},
 
 	data() {
+		const destination = (this.context.permissions & Permission.SHARE)
+			? this.context.path
+			: '/'
 		return {
 			currentStep: STEP.FIRST,
 			loading: false,
 
-			destination: this.context.path || '/',
+			destination,
 			label: '',
 			note: '',
 
@@ -216,18 +229,27 @@ export default defineComponent({
 	},
 
 	methods: {
+		returnFocusTarget(): HTMLElement | null {
+			return document.querySelector<HTMLElement>('.upload-picker button')
+		},
+
 		onPageNext() {
 			const form = this.$refs.form as HTMLFormElement
-			if (!form.checkValidity()) {
-				form.reportValidity()
-				return
-			}
+
+			// Reset custom validity
+			form.querySelectorAll('input').forEach((input) => input.setCustomValidity(''))
 
 			// custom destination validation
 			// cannot share root
 			if (this.destination === '/' || this.destination === '') {
 				const destinationInput = form.querySelector('input[name="destination"]') as HTMLInputElement
 				destinationInput?.setCustomValidity(t('files_sharing', 'Please select a folder, you cannot share the root directory.'))
+				form.reportValidity()
+				return
+			}
+
+			// If the form is not valid, show the error message
+			if (!form.checkValidity()) {
 				form.reportValidity()
 				return
 			}
@@ -291,8 +313,8 @@ export default defineComponent({
 					path: this.destination,
 					note: this.note,
 
-					password: this.password || undefined,
-					expireDate: expireDate || undefined,
+					password: this.password || '',
+					expireDate: expireDate || '',
 
 					// Empty string
 					shareWith: '',
@@ -318,11 +340,9 @@ export default defineComponent({
 				this.currentStep = STEP.LAST
 			} catch (error) {
 				const errorMessage = (error as AxiosError<OCSResponse>)?.response?.data?.ocs?.meta?.message
-				showError(
-					errorMessage
-						? t('files_sharing', 'Error creating the share: {errorMessage}', { errorMessage })
-						: t('files_sharing', 'Error creating the share'),
-				)
+				showError(errorMessage
+					? t('files_sharing', 'Error creating the share: {errorMessage}', { errorMessage })
+					: t('files_sharing', 'Error creating the share'))
 				logger.error('Error while creating share', { error, errorMessage })
 				throw error
 			} finally {
@@ -346,8 +366,7 @@ export default defineComponent({
 						value: this.emails,
 						key: 'emails',
 						scope: 'shareWith',
-					},
-					{
+					}, {
 						value: true,
 						key: 'enabled',
 						scope: 'fileRequest',
@@ -395,11 +414,9 @@ export default defineComponent({
 
 		onEmailSendError(error: AxiosError<OCSResponse>) {
 			const errorMessage = error.response?.data?.ocs?.meta?.message
-			showError(
-				errorMessage
-					? t('files_sharing', 'Error sending emails: {errorMessage}', { errorMessage })
-					: t('files_sharing', 'Error sending emails'),
-			)
+			showError(errorMessage
+				? t('files_sharing', 'Error sending emails: {errorMessage}', { errorMessage })
+				: t('files_sharing', 'Error sending emails'))
 			logger.error('Error while sending emails', { error, errorMessage })
 		},
 	},

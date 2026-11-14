@@ -1,4 +1,5 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2019 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
@@ -8,6 +9,7 @@ namespace Test\AppFramework\Db;
 
 use OCP\AppFramework\Db\Entity;
 use OCP\AppFramework\Db\QBMapper;
+use OCP\AppFramework\Db\SnowflakeAwareEntity;
 use OCP\DB\QueryBuilder\IExpressionBuilder;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\DB\Types;
@@ -78,7 +80,10 @@ class QBMapperTest extends \Test\TestCase {
 	/**
 	 * @throws \ReflectionException
 	 */
+	#[\Override]
 	protected function setUp(): void {
+		parent::setUp();
+
 		$this->db = $this->getMockBuilder(IDBConnection::class)
 			->disableOriginalConstructor()
 			->getMock();
@@ -91,15 +96,12 @@ class QBMapperTest extends \Test\TestCase {
 			->disableOriginalConstructor()
 			->getMock();
 
-
 		$this->qb->method('expr')->willReturn($this->expr);
 		$this->db->method('getQueryBuilder')->willReturn($this->qb);
-
 
 		$this->mapper = new QBTestMapper($this->db);
 	}
 
-	
 	public function testInsertEntityParameterTypeMapping(): void {
 		$datetime = new \DateTimeImmutable();
 		$entity = new QBTestEntity();
@@ -117,31 +119,39 @@ class QBMapperTest extends \Test\TestCase {
 		$booleanParam = $this->qb->createNamedParameter('boolean_prop', IQueryBuilder::PARAM_BOOL);
 		$datetimeParam = $this->qb->createNamedParameter('datetime_prop', IQueryBuilder::PARAM_DATETIME_IMMUTABLE);
 
+		$createNamedParameterCalls = [
+			[123, IQueryBuilder::PARAM_INT, null],
+			[true, IQueryBuilder::PARAM_BOOL, null],
+			['string', IQueryBuilder::PARAM_STR, null],
+			[456, IQueryBuilder::PARAM_INT, null],
+			[false, IQueryBuilder::PARAM_BOOL, null],
+			[$datetime, IQueryBuilder::PARAM_DATETIME_IMMUTABLE, null],
+		];
 		$this->qb->expects($this->exactly(6))
 			->method('createNamedParameter')
-			->withConsecutive(
-				[$this->equalTo(123), $this->equalTo(IQueryBuilder::PARAM_INT)],
-				[$this->equalTo(true), $this->equalTo(IQueryBuilder::PARAM_BOOL)],
-				[$this->equalTo('string'), $this->equalTo(IQueryBuilder::PARAM_STR)],
-				[$this->equalTo(456), $this->equalTo(IQueryBuilder::PARAM_INT)],
-				[$this->equalTo(false), $this->equalTo(IQueryBuilder::PARAM_BOOL)],
-				[$this->equalTo($datetime), $this->equalTo(IQueryBuilder::PARAM_DATETIME_IMMUTABLE)],
-			);
+			->willReturnCallback(function () use (&$createNamedParameterCalls): void {
+				$expected = array_shift($createNamedParameterCalls);
+				$this->assertEquals($expected, func_get_args());
+			});
+
+		$setValueCalls = [
+			['int_prop', $intParam],
+			['bool_prop', $boolParam],
+			['string_prop', $stringParam],
+			['integer_prop', $integerParam],
+			['boolean_prop', $booleanParam],
+			['datetime_prop', $datetimeParam],
+		];
 		$this->qb->expects($this->exactly(6))
 			->method('setValue')
-			->withConsecutive(
-				[$this->equalTo('int_prop'), $this->equalTo($intParam)],
-				[$this->equalTo('bool_prop'), $this->equalTo($boolParam)],
-				[$this->equalTo('string_prop'), $this->equalTo($stringParam)],
-				[$this->equalTo('integer_prop'), $this->equalTo($integerParam)],
-				[$this->equalTo('boolean_prop'), $this->equalTo($booleanParam)],
-				[$this->equalTo('datetime_prop'), $this->equalTo($datetimeParam)],
-			);
+			->willReturnCallback(function () use (&$setValueCalls): void {
+				$expected = array_shift($setValueCalls);
+				$this->assertEquals($expected, func_get_args());
+			});
 
 		$this->mapper->insert($entity);
 	}
 
-	
 	public function testUpdateEntityParameterTypeMapping(): void {
 		$datetime = new \DateTimeImmutable();
 		$entity = new QBTestEntity();
@@ -163,40 +173,114 @@ class QBMapperTest extends \Test\TestCase {
 		$jsonParam = $this->qb->createNamedParameter('json_prop', IQueryBuilder::PARAM_JSON);
 		$datetimeParam = $this->qb->createNamedParameter('datetime_prop', IQueryBuilder::PARAM_DATETIME_IMMUTABLE);
 
+		$createNamedParameterCalls = [
+			[123, IQueryBuilder::PARAM_INT, null],
+			[true, IQueryBuilder::PARAM_BOOL, null],
+			['string', IQueryBuilder::PARAM_STR, null],
+			[456, IQueryBuilder::PARAM_INT, null],
+			[false, IQueryBuilder::PARAM_BOOL, null],
+			[['hello' => 'world'], IQueryBuilder::PARAM_JSON, null],
+			[$datetime, IQueryBuilder::PARAM_DATETIME_IMMUTABLE, null],
+			[789, IQueryBuilder::PARAM_INT, null],
+		];
 		$this->qb->expects($this->exactly(8))
 			->method('createNamedParameter')
-			->withConsecutive(
-				[$this->equalTo(123), $this->equalTo(IQueryBuilder::PARAM_INT)],
-				[$this->equalTo(true), $this->equalTo(IQueryBuilder::PARAM_BOOL)],
-				[$this->equalTo('string'), $this->equalTo(IQueryBuilder::PARAM_STR)],
-				[$this->equalTo(456), $this->equalTo(IQueryBuilder::PARAM_INT)],
-				[$this->equalTo(false), $this->equalTo(IQueryBuilder::PARAM_BOOL)],
-				[$this->equalTo(['hello' => 'world']), $this->equalTo(IQueryBuilder::PARAM_JSON)],
-				[$this->equalTo($datetime), $this->equalTo(IQueryBuilder::PARAM_DATETIME_IMMUTABLE)],
-				[$this->equalTo(789), $this->equalTo(IQueryBuilder::PARAM_INT)],
-			);
+			->willReturnCallback(function () use (&$createNamedParameterCalls): void {
+				$expected = array_shift($createNamedParameterCalls);
+				$this->assertEquals($expected, func_get_args());
+			});
 
+		$setCalls = [
+			['int_prop', $intParam],
+			['bool_prop', $boolParam],
+			['string_prop', $stringParam],
+			['integer_prop', $integerParam],
+			['boolean_prop', $booleanParam],
+			['json_prop', $datetimeParam],
+			['datetime_prop', $datetimeParam],
+		];
 		$this->qb->expects($this->exactly(7))
 			->method('set')
-			->withConsecutive(
-				[$this->equalTo('int_prop'), $this->equalTo($intParam)],
-				[$this->equalTo('bool_prop'), $this->equalTo($boolParam)],
-				[$this->equalTo('string_prop'), $this->equalTo($stringParam)],
-				[$this->equalTo('integer_prop'), $this->equalTo($integerParam)],
-				[$this->equalTo('boolean_prop'), $this->equalTo($booleanParam)],
-				[$this->equalTo('json_prop'), $this->equalTo($jsonParam)],
-				[$this->equalTo('datetime_prop'), $this->equalTo($datetimeParam)],
-			);
+			->willReturnCallback(function () use (&$setCalls): void {
+				$expected = array_shift($setCalls);
+				$this->assertEquals($expected, func_get_args());
+			});
 
 		$this->expr->expects($this->once())
 			->method('eq')
 			->with($this->equalTo('id'), $this->equalTo($idParam));
 
-
 		$this->mapper->update($entity);
 	}
 
-	
+	public function testInsertIgnoreConflictEntityValueMapping(): void {
+		$entity = new QBTestEntity();
+		$entity->setIntProp(123);
+		$entity->setBoolProp(true);
+		$entity->setStringProp('string');
+		$entity->setIntegerProp(456);
+		$entity->setBooleanProp(false);
+
+		$this->db->expects($this->never())->method('getQueryBuilder');
+		$this->db->expects($this->once())
+			->method('insertIgnoreConflict')
+			->with('table', [
+				'int_prop' => 123,
+				'bool_prop' => true,
+				'string_prop' => 'string',
+				'integer_prop' => 456,
+				'boolean_prop' => false,
+			])
+			->willReturn(1);
+
+		$this->assertSame(1, $this->mapper->insertIgnoreConflict($entity));
+	}
+
+	public function testInsertIgnoreConflictReturnsZero(): void {
+		$entity = new QBTestEntity();
+		$entity->setId(123);
+		$entity->setStringProp('string');
+
+		$this->db->expects($this->once())
+			->method('insertIgnoreConflict')
+			->with('table', ['id' => 123, 'string_prop' => 'string'])
+			->willReturn(0);
+
+		$this->assertSame(0, $this->mapper->insertIgnoreConflict($entity));
+	}
+
+	public function testInsertIgnoreConflictSkipsNullId(): void {
+		$entity = new QBTestEntity();
+		$entity->setId(123);
+		$entity->setId(null);
+		$entity->setStringProp('string');
+
+		$this->db->expects($this->once())
+			->method('insertIgnoreConflict')
+			->with('table', ['string_prop' => 'string'])
+			->willReturn(1);
+
+		$this->assertSame(1, $this->mapper->insertIgnoreConflict($entity));
+	}
+
+	public function testInsertIgnoreConflictGeneratesSnowflakeId(): void {
+		$entity = new class extends SnowflakeAwareEntity {
+			#[\Override]
+			public function generateId(): void {
+				$this->id = '123';
+				$this->markFieldUpdated('id');
+			}
+		};
+
+		$this->db->expects($this->once())
+			->method('insertIgnoreConflict')
+			->with('table', ['id' => '123'])
+			->willReturn(1);
+
+		$this->assertSame(1, $this->mapper->insertIgnoreConflict($entity));
+		$this->assertSame('123', $entity->getId());
+	}
+
 	public function testGetParameterTypeForProperty(): void {
 		$entity = new QBTestEntity();
 

@@ -1,68 +1,77 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OC\Preview;
 
 use OCP\Files\File;
-use OCP\Files\IRootFolder;
 use OCP\Files\SimpleFS\ISimpleFile;
-use OCP\IConfig;
 use OCP\IImage;
 use OCP\Image as OCPImage;
-use OCP\Preview\IProvider;
+use OCP\IPreview;
 use OCP\Preview\IProviderV2;
 
 /**
  * Very small wrapper class to make the generator fully unit testable
+ * @psalm-import-type ProviderClosure from IPreview
  */
 class GeneratorHelper {
-	/** @var IRootFolder */
-	private $rootFolder;
-
-	/** @var IConfig */
-	private $config;
-
-	public function __construct(IRootFolder $rootFolder, IConfig $config) {
-		$this->rootFolder = $rootFolder;
-		$this->config = $config;
+	public function __construct(
+		private readonly IMagickSupport $imagickSupport,
+	) {
 	}
 
-	/**
-	 * @param IProviderV2 $provider
-	 * @param File $file
-	 * @param int $maxWidth
-	 * @param int $maxHeight
-	 *
-	 * @return bool|IImage
-	 */
-	public function getThumbnail(IProviderV2 $provider, File $file, $maxWidth, $maxHeight, bool $crop = false) {
+	public function getThumbnail(IProviderV2 $provider, File $file, int $maxWidth, int $maxHeight, bool $crop = false): IImage|false {
 		if ($provider instanceof Imaginary) {
 			return $provider->getCroppedThumbnail($file, $maxWidth, $maxHeight, $crop) ?? false;
 		}
 		return $provider->getThumbnail($file, $maxWidth, $maxHeight) ?? false;
 	}
 
-	/**
-	 * @param ISimpleFile $maxPreview
-	 * @return IImage
-	 */
-	public function getImage(ISimpleFile $maxPreview) {
+	public function getImage(ISimpleFile $maxPreview): IImage {
 		$image = new OCPImage();
 		$image->loadFromData($maxPreview->getContent());
 		return $image;
 	}
 
 	/**
-	 * @param callable $providerClosure
-	 * @return IProviderV2
+	 * Decode a JPEG preview at a reduced size of at least $minWidth x $minHeight,
+	 * much faster than a full decode. Requires Imagick.
 	 */
-	public function getProvider($providerClosure) {
-		$provider = $providerClosure();
-		if ($provider instanceof IProvider) {
-			$provider = new ProviderV1Adapter($provider);
+	public function getScaledImage(ISimpleFile $preview, int $minWidth, int $minHeight): ?IImage {
+		if ($preview->getMimeType() !== 'image/jpeg' || !$this->imagickSupport->hasExtension()) {
+			return null;
 		}
-		return $provider;
+
+		try {
+			$imagick = new \Imagick();
+			// libjpeg scales by multiples of 1/8, twice the size keeps enough detail
+			$imagick->setOption('jpeg:size', ($minWidth * 2) . 'x' . ($minHeight * 2));
+			$imagick->readImageBlob($preview->getContent());
+			if ($imagick->getImageWidth() < $minWidth || $imagick->getImageHeight() < $minHeight) {
+				return null;
+			}
+			// Re-encoded as JPEG, so derived previews keep the mimetype
+			$imagick->setImageFormat('jpeg');
+			$imagick->setImageCompressionQuality(95);
+			$data = $imagick->getImageBlob();
+			$imagick->clear();
+		} catch (\ImagickException) {
+			return null;
+		}
+
+		$image = new OCPImage();
+		$image->loadFromData($data);
+		return $image->valid() ? $image : null;
+	}
+
+	/**
+	 * @param \Closure|string $providerClosure (string is only authorized in unit tests)
+	 */
+	public function getProvider(\Closure|string $providerClosure): IProviderV2|false {
+		return $providerClosure();
 	}
 }

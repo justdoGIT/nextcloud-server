@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2020 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Files_Sharing\Event;
 
 use OCP\EventDispatcher\Event;
@@ -23,19 +24,14 @@ class BeforeTemplateRenderedEvent extends Event {
 	 */
 	public const SCOPE_PUBLIC_SHARE_AUTH = 'publicShareAuth';
 
-	/** @var IShare */
-	private $share;
-	/** @var string|null */
-	private $scope;
-
 	/**
 	 * @since 20.0.0
 	 */
-	public function __construct(IShare $share, ?string $scope = null) {
+	public function __construct(
+		private IShare $share,
+		private ?string $scope = null,
+	) {
 		parent::__construct();
-
-		$this->share = $share;
-		$this->scope = $scope;
 	}
 
 	/**

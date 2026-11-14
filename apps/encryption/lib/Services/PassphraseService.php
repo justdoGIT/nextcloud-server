@@ -8,21 +8,23 @@ declare(strict_types=1);
 
 namespace OCA\Encryption\Services;
 
+use OC\Files\Filesystem;
 use OCA\Encryption\Crypto\Crypt;
 use OCA\Encryption\KeyManager;
 use OCA\Encryption\Recovery;
 use OCA\Encryption\Session;
 use OCA\Encryption\Util;
 use OCP\Encryption\Exceptions\GenericEncryptionException;
+use OCP\EventDispatcher\IEventDispatcher;
 use OCP\IUser;
 use OCP\IUserManager;
 use OCP\IUserSession;
+use OCP\Log\Audit\CriticalActionPerformedEvent;
 use Psr\Log\LoggerInterface;
 
 class PassphraseService {
-
 	/** @var array<string, bool> */
-	private static array $passwordResetUsers = [];
+	private array $passwordResetUsers = [];
 
 	public function __construct(
 		private Util $util,
@@ -33,24 +35,36 @@ class PassphraseService {
 		private LoggerInterface $logger,
 		private IUserManager $userManager,
 		private IUserSession $userSession,
+		private IEventDispatcher $eventDispatcher,
 	) {
 	}
 
 	public function setProcessingReset(string $uid, bool $processing = true): void {
 		if ($processing) {
-			self::$passwordResetUsers[$uid] = true;
+			$this->passwordResetUsers[$uid] = true;
 		} else {
-			unset(self::$passwordResetUsers[$uid]);
+			unset($this->passwordResetUsers[$uid]);
 		}
 	}
 
 	/**
 	 * Change a user's encryption passphrase
 	 */
-	public function setPassphraseForUser(string $userId, string $password, ?string $recoveryPassword = null): bool {
+	public function setPassphraseForUser(
+		string $userId,
+		#[\SensitiveParameter]
+		string $password,
+		#[\SensitiveParameter]
+		?string $recoveryPassword = null,
+	): bool {
 		// if we are in the process to resetting a user password, we have nothing
 		// to do here
-		if (isset(self::$passwordResetUsers[$userId])) {
+		if (isset($this->passwordResetUsers[$userId])) {
+			return true;
+		}
+
+		if ($this->util->isMasterKeyEnabled()) {
+			$this->logger->error('setPassphraseForUser should never be called when master key is enabled');
 			return true;
 		}
 
@@ -78,7 +92,7 @@ class PassphraseService {
 			}
 
 			$this->logger->error('Encryption could not update users encryption password');
-			
+
 			// NOTE: Session does not need to be updated as the
 			// private key has not changed, only the passphrase
 			// used to decrypt it has changed
@@ -122,6 +136,12 @@ class PassphraseService {
 				}
 
 				$this->keyManager->setPrivateKey($userId, $this->crypt->generateHeader() . $encryptedKey);
+				$this->eventDispatcher->dispatchTyped(new CriticalActionPerformedEvent(
+					'Encryption keys of user "%s" were regenerated',
+					['userId' => $userId],
+					false,
+					'encryption.user_keys.regenerated',
+				));
 
 				if ($recoveryPassword !== '') {
 					// if recovery key is set we can re-encrypt the key files
@@ -136,7 +156,7 @@ class PassphraseService {
 	/**
 	 * Init mount points for given user
 	 */
-	private function initMountPoints(IUser $user): void {
-		\OC\Files\Filesystem::initMountPoints($user);
+	protected function initMountPoints(IUser $user): void {
+		Filesystem::initMountPoints($user);
 	}
 }

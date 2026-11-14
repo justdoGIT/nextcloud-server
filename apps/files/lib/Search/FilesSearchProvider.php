@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2020 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Files\Search;
 
 use InvalidArgumentException;
@@ -35,34 +36,19 @@ use OCP\Search\SearchResultEntry;
 use OCP\Share\IShare;
 
 class FilesSearchProvider implements IFilteringProvider {
-	/** @var IL10N */
-	private $l10n;
-
-	/** @var IURLGenerator */
-	private $urlGenerator;
-
-	/** @var IMimeTypeDetector */
-	private $mimeTypeDetector;
-
-	/** @var IRootFolder */
-	private $rootFolder;
-
 	public function __construct(
-		IL10N $l10n,
-		IURLGenerator $urlGenerator,
-		IMimeTypeDetector $mimeTypeDetector,
-		IRootFolder $rootFolder,
+		private IL10N $l10n,
+		private IURLGenerator $urlGenerator,
+		private IMimeTypeDetector $mimeTypeDetector,
+		private IRootFolder $rootFolder,
 		private IPreview $previewManager,
 	) {
-		$this->l10n = $l10n;
-		$this->urlGenerator = $urlGenerator;
-		$this->mimeTypeDetector = $mimeTypeDetector;
-		$this->rootFolder = $rootFolder;
 	}
 
 	/**
 	 * @inheritDoc
 	 */
+	#[\Override]
 	public function getId(): string {
 		return 'files';
 	}
@@ -70,6 +56,7 @@ class FilesSearchProvider implements IFilteringProvider {
 	/**
 	 * @inheritDoc
 	 */
+	#[\Override]
 	public function getName(): string {
 		return $this->l10n->t('Files');
 	}
@@ -77,6 +64,7 @@ class FilesSearchProvider implements IFilteringProvider {
 	/**
 	 * @inheritDoc
 	 */
+	#[\Override]
 	public function getOrder(string $route, array $routeParameters): int {
 		if ($route === 'files.View.index') {
 			// Before comments
@@ -85,6 +73,7 @@ class FilesSearchProvider implements IFilteringProvider {
 		return 5;
 	}
 
+	#[\Override]
 	public function getSupportedFilters(): array {
 		return [
 			'term',
@@ -101,10 +90,12 @@ class FilesSearchProvider implements IFilteringProvider {
 		];
 	}
 
+	#[\Override]
 	public function getAlternateIds(): array {
 		return [];
 	}
 
+	#[\Override]
 	public function getCustomFilters(): array {
 		return [
 			new FilterDefinition('min-size', FilterDefinition::TYPE_INT),
@@ -116,6 +107,7 @@ class FilesSearchProvider implements IFilteringProvider {
 		];
 	}
 
+	#[\Override]
 	public function search(IUser $user, ISearchQuery $query): SearchResult {
 		$userFolder = $this->rootFolder->getUserFolder($user->getUID());
 		$fileQuery = $this->buildSearchQuery($query, $user);

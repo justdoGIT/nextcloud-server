@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OC\Core\Command\Db\Migrations;
 
 use OC\Migration\MetadataManager;
@@ -25,6 +26,7 @@ class GenerateMetadataCommand extends Command {
 		parent::__construct();
 	}
 
+	#[\Override]
 	protected function configure(): void {
 		$this->setName('migrations:generate-metadata')
 			->setHidden(true)
@@ -33,6 +35,7 @@ class GenerateMetadataCommand extends Command {
 		parent::configure();
 	}
 
+	#[\Override]
 	public function execute(InputInterface $input, OutputInterface $output): int {
 		$output->writeln(
 			json_encode(
@@ -68,15 +71,11 @@ class GenerateMetadataCommand extends Command {
 		$metadata = [];
 		foreach ($allApps as $appId) {
 			// We need to load app before being able to extract Migrations
-			// If app was not enabled before, we will disable it afterward.
-			$alreadyLoaded = $this->appManager->isInstalled($appId);
+			$alreadyLoaded = $this->appManager->isAppLoaded($appId);
 			if (!$alreadyLoaded) {
 				$this->appManager->loadApp($appId);
 			}
 			$metadata[$appId] = $this->metadataManager->extractMigrationAttributes($appId);
-			if (!$alreadyLoaded) {
-				$this->appManager->disableApp($appId);
-			}
 		}
 		return $metadata;
 	}

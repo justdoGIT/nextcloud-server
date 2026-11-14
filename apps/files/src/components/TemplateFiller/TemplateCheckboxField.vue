@@ -5,10 +5,11 @@
 
 <template>
 	<div class="template-field__checkbox">
-		<NcCheckboxRadioSwitch :id="fieldId"
-			:checked.sync="value"
+		<NcCheckboxRadioSwitch
+			:id="fieldId"
+			v-model="value"
 			type="switch"
-			@update:checked="input">
+			@update:modelValue="input">
 			{{ fieldLabel }}
 		</NcCheckboxRadioSwitch>
 	</div>
@@ -16,7 +17,7 @@
 
 <script lang="ts">
 import { defineComponent } from 'vue'
-import { NcCheckboxRadioSwitch } from '@nextcloud/vue'
+import NcCheckboxRadioSwitch from '@nextcloud/vue/components/NcCheckboxRadioSwitch'
 
 export default defineComponent({
 	name: 'TemplateCheckboxField',
@@ -40,10 +41,11 @@ export default defineComponent({
 
 	computed: {
 		fieldLabel() {
-			const label = this.field.name ?? this.field.alias ?? 'Unknown field'
+			const label = this.field.name || this.field.alias
 
 			return label.charAt(0).toUpperCase() + label.slice(1)
 		},
+
 		fieldId() {
 			return 'checkbox-field' + this.field.index
 		},

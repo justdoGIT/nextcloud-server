@@ -6,25 +6,26 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2018 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\TwoFactorBackupCodes\Notifications;
 
+use OCA\TwoFactorBackupCodes\Provider\BackupCodesProvider;
 use OCP\IURLGenerator;
+use OCP\IUserManager;
 use OCP\L10N\IFactory;
+use OCP\Notification\AlreadyProcessedException;
 use OCP\Notification\INotification;
 use OCP\Notification\INotifier;
 use OCP\Notification\UnknownNotificationException;
 
 class Notifier implements INotifier {
 
-	/** @var IFactory */
-	private $factory;
-
-	/** @var IURLGenerator */
-	private $url;
-
-	public function __construct(IFactory $factory, IURLGenerator $url) {
-		$this->factory = $factory;
-		$this->url = $url;
+	public function __construct(
+		private IFactory $factory,
+		private IURLGenerator $url,
+		private BackupCodesProvider $provider,
+		private IUserManager $userManager,
+	) {
 	}
 
 	/**
@@ -33,6 +34,7 @@ class Notifier implements INotifier {
 	 * @return string
 	 * @since 17.0.0
 	 */
+	#[\Override]
 	public function getID(): string {
 		return 'twofactor_backupcodes';
 	}
@@ -43,10 +45,12 @@ class Notifier implements INotifier {
 	 * @return string
 	 * @since 17.0.0
 	 */
+	#[\Override]
 	public function getName(): string {
 		return $this->factory->get('twofactor_backupcodes')->t('Second-factor backup codes');
 	}
 
+	#[\Override]
 	public function prepare(INotification $notification, string $languageCode): INotification {
 		if ($notification->getApp() !== 'twofactor_backupcodes') {
 			// Not my app => throw
@@ -58,6 +62,16 @@ class Notifier implements INotifier {
 
 		switch ($notification->getSubject()) {
 			case 'create_backupcodes':
+				$user = $this->userManager->get($notification->getUser());
+				if ($user === null) {
+					throw new UnknownNotificationException();
+				}
+				if (!$this->provider->isActive($user)) {
+					// No other 2FA available, so this provider is also not working anymore.
+					// Dismiss the notification.
+					throw new AlreadyProcessedException();
+				}
+
 				$notification->setParsedSubject(
 					$l->t('Generate backup codes')
 				)->setParsedMessage(
@@ -69,7 +83,6 @@ class Notifier implements INotifier {
 				$notification->setIcon($this->url->getAbsoluteURL($this->url->imagePath('core', 'actions/password.svg')));
 
 				return $notification;
-
 			default:
 				// Unknown subject => Unknown notification => throw
 				throw new UnknownNotificationException();

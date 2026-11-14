@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2019 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Files\Notification;
 
 use OCA\Files\BackgroundJob\TransferOwnership;
@@ -13,10 +14,12 @@ use OCA\Files\Db\TransferOwnershipMapper;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\IJobList;
+use OCP\EventDispatcher\IEventDispatcher;
 use OCP\IURLGenerator;
 use OCP\IUser;
 use OCP\IUserManager;
 use OCP\L10N\IFactory;
+use OCP\Log\Audit\CriticalActionPerformedEvent;
 use OCP\Notification\IAction;
 use OCP\Notification\IDismissableNotifier;
 use OCP\Notification\IManager;
@@ -24,53 +27,34 @@ use OCP\Notification\INotification;
 use OCP\Notification\INotifier;
 use OCP\Notification\UnknownNotificationException;
 
-class Notifier implements INotifier, IDismissableNotifier {
-	/** @var IFactory */
-	protected $l10nFactory;
-
-	/** @var IURLGenerator */
-	protected $urlGenerator;
-	/** @var TransferOwnershipMapper */
-	private $mapper;
-	/** @var IManager */
-	private $notificationManager;
-	/** @var IUserManager */
-	private $userManager;
-	/** @var ITimeFactory */
-	private $timeFactory;
-	/** @var IJobList */
-	private $jobList;
-
-	public function __construct(IFactory $l10nFactory,
-		IURLGenerator $urlGenerator,
-		TransferOwnershipMapper $mapper,
-		IManager $notificationManager,
-		IUserManager $userManager,
-		IJobList $jobList,
-		ITimeFactory $timeFactory) {
-		$this->l10nFactory = $l10nFactory;
-		$this->urlGenerator = $urlGenerator;
-		$this->jobList = $jobList;
-		$this->mapper = $mapper;
-		$this->notificationManager = $notificationManager;
-		$this->userManager = $userManager;
-		$this->timeFactory = $timeFactory;
+final readonly class Notifier implements INotifier, IDismissableNotifier {
+	public function __construct(
+		private IFactory $l10nFactory,
+		private IURLGenerator $urlGenerator,
+		private TransferOwnershipMapper $mapper,
+		private IManager $notificationManager,
+		private IUserManager $userManager,
+		private IJobList $jobList,
+		private ITimeFactory $timeFactory,
+		private IEventDispatcher $eventDispatcher,
+	) {
 	}
 
+	#[\Override]
 	public function getID(): string {
 		return 'files';
 	}
 
+	#[\Override]
 	public function getName(): string {
 		return $this->l10nFactory->get('files')->t('Files');
 	}
 
 	/**
-	 * @param INotification $notification
 	 * @param string $languageCode The code of the language that should be used to prepare the notification
-	 * @return INotification
 	 * @throws UnknownNotificationException When the notification was not prepared by a notifier
 	 */
+	#[\Override]
 	public function prepare(INotification $notification, string $languageCode): INotification {
 		if ($notification->getApp() !== 'files') {
 			throw new UnknownNotificationException('Unhandled app');
@@ -122,7 +106,9 @@ class Notifier implements INotifier, IDismissableNotifier {
 				IAction::TYPE_DELETE
 			);
 
-		$sourceUser = $this->getUser($param['sourceUser']);
+		$sourceUser = $this->getUser((string)$param['sourceUser']);
+		$targetUserId = (string)$param['targetUser'];
+		$nodeName = (string)$param['nodeName'];
 		$notification->addParsedAction($approveAction)
 			->addParsedAction($disapproveAction)
 			->setRichSubject(
@@ -139,8 +125,8 @@ class Notifier implements INotifier, IDismissableNotifier {
 				[
 					'path' => [
 						'type' => 'highlight',
-						'id' => $param['targetUser'] . '::' . $param['nodeName'],
-						'name' => $param['nodeName'],
+						'id' => $targetUserId . '::' . $nodeName,
+						'name' => $nodeName,
 					]
 				]);
 
@@ -151,15 +137,17 @@ class Notifier implements INotifier, IDismissableNotifier {
 		$l = $this->l10nFactory->get('files', $languageCode);
 		$param = $notification->getSubjectParameters();
 
-		$targetUser = $this->getUser($param['targetUser']);
+		$targetUser = $this->getUser((string)$param['targetUser']);
+		$targetUserId = (string)$param['targetUser'];
+		$nodeName = (string)$param['nodeName'];
 		$notification->setRichSubject($l->t('Ownership transfer denied'))
 			->setRichMessage(
 				$l->t('Your ownership transfer of {path} was denied by {user}.'),
 				[
 					'path' => [
 						'type' => 'highlight',
-						'id' => $param['targetUser'] . '::' . $param['nodeName'],
-						'name' => $param['nodeName'],
+						'id' => $targetUserId . '::' . $nodeName,
+						'name' => $nodeName,
 					],
 					'user' => [
 						'type' => 'user',
@@ -174,15 +162,17 @@ class Notifier implements INotifier, IDismissableNotifier {
 		$l = $this->l10nFactory->get('files', $languageCode);
 		$param = $notification->getSubjectParameters();
 
-		$targetUser = $this->getUser($param['targetUser']);
+		$targetUser = $this->getUser((string)$param['targetUser']);
+		$targetUserId = (string)$param['targetUser'];
+		$nodeName = (string)$param['nodeName'];
 		$notification->setRichSubject($l->t('Ownership transfer failed'))
 			->setRichMessage(
 				$l->t('Your ownership transfer of {path} to {user} failed.'),
 				[
 					'path' => [
 						'type' => 'highlight',
-						'id' => $param['targetUser'] . '::' . $param['nodeName'],
-						'name' => $param['nodeName'],
+						'id' => $targetUserId . '::' . $nodeName,
+						'name' => $nodeName,
 					],
 					'user' => [
 						'type' => 'user',
@@ -197,15 +187,17 @@ class Notifier implements INotifier, IDismissableNotifier {
 		$l = $this->l10nFactory->get('files', $languageCode);
 		$param = $notification->getSubjectParameters();
 
-		$sourceUser = $this->getUser($param['sourceUser']);
+		$sourceUser = $this->getUser((string)$param['sourceUser']);
+		$sourceUserId = (string)$param['sourceUser'];
+		$nodeName = (string)$param['nodeName'];
 		$notification->setRichSubject($l->t('Ownership transfer failed'))
 			->setRichMessage(
 				$l->t('The ownership transfer of {path} from {user} failed.'),
 				[
 					'path' => [
 						'type' => 'highlight',
-						'id' => $param['sourceUser'] . '::' . $param['nodeName'],
-						'name' => $param['nodeName'],
+						'id' => $sourceUserId . '::' . $nodeName,
+						'name' => $nodeName,
 					],
 					'user' => [
 						'type' => 'user',
@@ -221,15 +213,17 @@ class Notifier implements INotifier, IDismissableNotifier {
 		$l = $this->l10nFactory->get('files', $languageCode);
 		$param = $notification->getSubjectParameters();
 
-		$targetUser = $this->getUser($param['targetUser']);
+		$targetUser = $this->getUser((string)$param['targetUser']);
+		$targetUserId = (string)$param['targetUser'];
+		$nodeName = (string)$param['nodeName'];
 		$notification->setRichSubject($l->t('Ownership transfer done'))
 			->setRichMessage(
 				$l->t('Your ownership transfer of {path} to {user} has completed.'),
 				[
 					'path' => [
 						'type' => 'highlight',
-						'id' => $param['targetUser'] . '::' . $param['nodeName'],
-						'name' => $param['nodeName'],
+						'id' => $targetUserId . '::' . $nodeName,
+						'name' => $nodeName,
 					],
 					'user' => [
 						'type' => 'user',
@@ -245,15 +239,17 @@ class Notifier implements INotifier, IDismissableNotifier {
 		$l = $this->l10nFactory->get('files', $languageCode);
 		$param = $notification->getSubjectParameters();
 
-		$sourceUser = $this->getUser($param['sourceUser']);
+		$sourceUser = $this->getUser((string)$param['sourceUser']);
+		$sourceUserId = (string)$param['sourceUser'];
+		$nodeName = (string)$param['nodeName'];
 		$notification->setRichSubject($l->t('Ownership transfer done'))
 			->setRichMessage(
 				$l->t('The ownership transfer of {path} from {user} has completed.'),
 				[
 					'path' => [
 						'type' => 'highlight',
-						'id' => $param['sourceUser'] . '::' . $param['nodeName'],
-						'name' => $param['nodeName'],
+						'id' => $sourceUserId . '::' . $nodeName,
+						'name' => $nodeName,
 					],
 					'user' => [
 						'type' => 'user',
@@ -265,10 +261,12 @@ class Notifier implements INotifier, IDismissableNotifier {
 		return $notification;
 	}
 
+	#[\Override]
 	public function dismissNotification(INotification $notification): void {
 		if ($notification->getApp() !== 'files') {
 			throw new UnknownNotificationException('Unhandled app');
 		}
+
 		if ($notification->getSubject() !== 'transferownershipRequest') {
 			throw new UnknownNotificationException('Unhandled notification type');
 		}
@@ -276,36 +274,48 @@ class Notifier implements INotifier, IDismissableNotifier {
 		// TODO: This should all be moved to a service that also the transferownershipController uses.
 		try {
 			$transferOwnership = $this->mapper->getById((int)$notification->getObjectId());
-		} catch (DoesNotExistException $e) {
+		} catch (DoesNotExistException) {
 			return;
 		}
 
 		if ($this->jobList->has(TransferOwnership::class, [
-			'id' => $transferOwnership->getId(),
+			'id' => $transferOwnership->id,
 		])) {
 			return;
 		}
 
 		$notification = $this->notificationManager->createNotification();
-		$notification->setUser($transferOwnership->getSourceUser())
+		$notification->setUser($transferOwnership->sourceUser)
 			->setApp('files')
 			->setDateTime($this->timeFactory->getDateTime())
 			->setSubject('transferownershipRequestDenied', [
-				'sourceUser' => $transferOwnership->getSourceUser(),
-				'targetUser' => $transferOwnership->getTargetUser(),
-				'nodeName' => $transferOwnership->getNodeName()
+				'sourceUser' => $transferOwnership->sourceUser,
+				'targetUser' => $transferOwnership->targetUser,
+				'nodeName' => $transferOwnership->nodeName
 			])
-			->setObject('transfer', (string)$transferOwnership->getId());
+			->setObject('transfer', (string)$transferOwnership->id);
 		$this->notificationManager->notify($notification);
 
 		$this->mapper->delete($transferOwnership);
+
+		$this->eventDispatcher->dispatchTyped(new CriticalActionPerformedEvent(
+			'Ownership transfer "%s" from user "%s" to user "%s" was rejected',
+			[
+				'transferId' => $transferOwnership->id,
+				'sourceUser' => $transferOwnership->sourceUser,
+				'targetUser' => $transferOwnership->targetUser,
+			],
+			false,
+			'files.ownership_transfer.rejected',
+		));
 	}
 
-	protected function getUser(string $userId): IUser {
+	private function getUser(string $userId): IUser {
 		$user = $this->userManager->get($userId);
 		if ($user instanceof IUser) {
 			return $user;
 		}
+
 		throw new \InvalidArgumentException('User not found');
 	}
 }

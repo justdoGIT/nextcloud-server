@@ -1,41 +1,41 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2017 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Encryption\Settings;
 
+use OCA\Encryption\AppInfo\Application;
 use OCA\Encryption\Session;
 use OCA\Encryption\Util;
 use OCP\AppFramework\Http\TemplateResponse;
-use OCP\IConfig;
+use OCP\AppFramework\Services\IInitialState;
+use OCP\Encryption\IManager;
+use OCP\IAppConfig;
 use OCP\IUserSession;
 use OCP\Settings\ISettings;
 
 class Personal implements ISettings {
 
-	/** @var IConfig */
-	private $config;
-	/** @var Session */
-	private $session;
-	/** @var Util */
-	private $util;
-	/** @var IUserSession */
-	private $userSession;
-
-	public function __construct(IConfig $config, Session $session, Util $util, IUserSession $userSession) {
-		$this->config = $config;
-		$this->session = $session;
-		$this->util = $util;
-		$this->userSession = $userSession;
+	public function __construct(
+		private Session $session,
+		private Util $util,
+		private IUserSession $userSession,
+		private IInitialState $initialState,
+		private IAppConfig $appConfig,
+		private IManager $manager,
+	) {
 	}
 
 	/**
 	 * @return TemplateResponse returns the instance with all parameters set, ready to be rendered
 	 * @since 9.1
 	 */
+	#[\Override]
 	public function getForm() {
-		$recoveryAdminEnabled = $this->config->getAppValue('encryption', 'recoveryAdminEnabled');
+		$recoveryAdminEnabled = $this->appConfig->getValueBool('encryption', 'recoveryAdminEnabled');
 		$privateKeySet = $this->session->isPrivateKeySet();
 
 		if (!$recoveryAdminEnabled && $privateKeySet) {
@@ -45,20 +45,24 @@ class Personal implements ISettings {
 		$userId = $this->userSession->getUser()->getUID();
 		$recoveryEnabledForUser = $this->util->isRecoveryEnabledForUser($userId);
 
-		$parameters = [
+		$this->initialState->provideInitialState('personalSettings', [
 			'recoveryEnabled' => $recoveryAdminEnabled,
 			'recoveryEnabledForUser' => $recoveryEnabledForUser,
 			'privateKeySet' => $privateKeySet,
 			'initialized' => $this->session->getStatus(),
-		];
-		return new TemplateResponse('encryption', 'settings-personal', $parameters, '');
+		]);
+
+		\OCP\Util::addStyle(Application::APP_ID, 'settings_personal');
+		\OCP\Util::addScript(Application::APP_ID, 'settings_personal');
+		return new TemplateResponse(Application::APP_ID, 'settings', renderAs: '');
 	}
 
-	/**
-	 * @return string the section ID, e.g. 'sharing'
-	 * @since 9.1
-	 */
+	#[\Override]
 	public function getSection() {
+		if (!$this->manager->isEnabled()) {
+			return null;
+		}
+
 		return 'security';
 	}
 
@@ -70,6 +74,7 @@ class Personal implements ISettings {
 	 * E.g.: 70
 	 * @since 9.1
 	 */
+	#[\Override]
 	public function getPriority() {
 		return 80;
 	}

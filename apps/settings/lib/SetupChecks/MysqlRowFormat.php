@@ -6,11 +6,12 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Settings\SetupChecks;
 
-use Doctrine\DBAL\Platforms\MySQLPlatform;
 use OC\DB\Connection;
 use OCP\IConfig;
+use OCP\IDBConnection;
 use OCP\IL10N;
 use OCP\IURLGenerator;
 use OCP\SetupCheck\ISetupCheck;
@@ -25,29 +26,31 @@ class MysqlRowFormat implements ISetupCheck {
 	) {
 	}
 
+	#[\Override]
 	public function getName(): string {
 		return $this->l10n->t('MySQL row format');
 	}
 
+	#[\Override]
 	public function getCategory(): string {
 		return 'database';
 	}
 
+	#[\Override]
 	public function run(): SetupResult {
-		if (!$this->connection->getDatabasePlatform() instanceof MySQLPlatform) {
+		$provider = $this->connection->getDatabaseProvider();
+		if (!in_array($provider, [IDBConnection::PLATFORM_MYSQL, IDBConnection::PLATFORM_MARIADB], true)) {
 			return SetupResult::success($this->l10n->t('You are not using MySQL'));
 		}
 
 		$wrongRowFormatTables = $this->getRowNotDynamicTables();
 		if (empty($wrongRowFormatTables)) {
-			return SetupResult::success($this->l10n->t('None of your table use ROW_FORMAT=Compressed'));
+			return SetupResult::success($this->l10n->t('None of your tables use ROW_FORMAT=Compressed'));
 		}
 
 		return SetupResult::warning(
-			$this->l10n->n(
-				'Table %s is not using ROW_FORMAT=Dynamic. This format offers the best database performances for Nextcloud. Please change the row format to Dynamic.',
-				'Some tables are not using ROW_FORMAT=Dynamic. This format offers the best database performances for Nextcloud. Please change the row format to Dynamic on the following tables: %s.',
-				count($wrongRowFormatTables),
+			$this->l10n->t(
+				'Incorrect row format found in your database. ROW_FORMAT=Dynamic offers the best database performances for Nextcloud. Please update row format on the following list: %s.',
 				[implode(', ', $wrongRowFormatTables)],
 			),
 			'https://dev.mysql.com/doc/refman/en/innodb-row-format.html',
@@ -58,11 +61,11 @@ class MysqlRowFormat implements ISetupCheck {
 	 * @return string[]
 	 */
 	private function getRowNotDynamicTables(): array {
-		$sql = 'SELECT table_name
+		$sql = "SELECT table_name
 			FROM information_schema.tables
 			WHERE table_schema = ?
-			  AND table_name LIKE "*PREFIX*%"
-			  AND row_format != "Dynamic";';
+			  AND table_name LIKE '*PREFIX*%'
+			  AND row_format != 'Dynamic';";
 
 		return $this->connection->executeQuery(
 			$sql,

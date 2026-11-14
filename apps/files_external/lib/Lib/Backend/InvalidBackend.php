@@ -1,9 +1,11 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2017-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud GmbH.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Files_External\Lib\Backend;
 
 use OCA\Files_External\Lib\StorageConfig;
@@ -16,21 +18,19 @@ use OCP\IUser;
  */
 class InvalidBackend extends Backend {
 
-	/** @var string Invalid backend id */
-	private $invalidId;
-
 	/**
 	 * Constructs a new InvalidBackend with the id of the invalid backend
 	 * for display purposes
 	 *
 	 * @param string $invalidId id of the backend that did not exist
 	 */
-	public function __construct($invalidId) {
-		$this->invalidId = $invalidId;
+	public function __construct(
+		private $invalidId,
+	) {
 		$this
-			->setIdentifier($invalidId)
+			->setIdentifier($this->invalidId)
 			->setStorageClass('\OC\Files\Storage\FailedStorage')
-			->setText('Unknown storage backend ' . $invalidId);
+			->setText('Unknown storage backend ' . $this->invalidId);
 	}
 
 	/**
@@ -45,6 +45,7 @@ class InvalidBackend extends Backend {
 	/**
 	 * @return void
 	 */
+	#[\Override]
 	public function manipulateStorageConfig(StorageConfig &$storage, ?IUser $user = null) {
 		$storage->setBackendOption('exception', new \Exception('Unknown storage backend "' . $this->invalidId . '"', StorageNotAvailableException::STATUS_ERROR));
 	}

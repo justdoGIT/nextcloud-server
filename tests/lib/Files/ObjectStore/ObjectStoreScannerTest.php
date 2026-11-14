@@ -1,4 +1,5 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
@@ -13,15 +14,14 @@ use OCP\Files\Cache\ICache;
 use OCP\Files\Storage\IStorage;
 use Test\TestCase;
 
-/**
- * @group DB
- */
+#[\PHPUnit\Framework\Attributes\Group('DB')]
 class ObjectStoreScannerTest extends TestCase {
 	private IStorage $storage;
 	private ICache $cache;
 	private ObjectStoreScanner $scanner;
 	private Scanner $realScanner;
 
+	#[\Override]
 	protected function setUp(): void {
 		parent::setUp();
 
@@ -35,9 +35,7 @@ class ObjectStoreScannerTest extends TestCase {
 		$data = "dummy file data\n";
 		$this->storage->file_put_contents('foo.txt', $data);
 
-		$this->assertEquals(
-			[],
-			$this->scanner->scanFile('foo.txt'),
+		$this->assertNull($this->scanner->scanFile('foo.txt'),
 			'Asserting that no error occurred while scanFile()'
 		);
 	}
@@ -54,8 +52,7 @@ class ObjectStoreScannerTest extends TestCase {
 	public function testFolder(): void {
 		$this->fillTestFolders();
 
-		$this->assertEquals(
-			[],
+		$this->assertNull(
 			$this->scanner->scan(''),
 			'Asserting that no error occurred while scan()'
 		);

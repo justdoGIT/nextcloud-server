@@ -5,6 +5,7 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Settings\Controller;
 
 use OC\AppFramework\Http;
@@ -18,43 +19,20 @@ use OCP\AppFramework\Http\Attribute\OpenAPI;
 use OCP\AppFramework\Http\DataDisplayResponse;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\Http\RedirectResponse;
-use OCP\IConfig;
-use OCP\IL10N;
 use OCP\IRequest;
 use OCP\IURLGenerator;
 use OCP\SetupCheck\ISetupCheckManager;
-use Psr\Log\LoggerInterface;
 
 #[OpenAPI(scope: OpenAPI::SCOPE_IGNORE)]
 class CheckSetupController extends Controller {
-	/** @var IConfig */
-	private $config;
-	/** @var IURLGenerator */
-	private $urlGenerator;
-	/** @var IL10N */
-	private $l10n;
-	/** @var Checker */
-	private $checker;
-	/** @var LoggerInterface */
-	private $logger;
-	private ISetupCheckManager $setupCheckManager;
-
-	public function __construct($AppName,
+	public function __construct(
+		$appName,
 		IRequest $request,
-		IConfig $config,
-		IURLGenerator $urlGenerator,
-		IL10N $l10n,
-		Checker $checker,
-		LoggerInterface $logger,
-		ISetupCheckManager $setupCheckManager,
+		private IURLGenerator $urlGenerator,
+		private Checker $checker,
+		private ISetupCheckManager $setupCheckManager,
 	) {
-		parent::__construct($AppName, $request);
-		$this->config = $config;
-		$this->urlGenerator = $urlGenerator;
-		$this->l10n = $l10n;
-		$this->checker = $checker;
-		$this->logger = $logger;
-		$this->setupCheckManager = $setupCheckManager;
+		parent::__construct($appName, $request);
 	}
 
 	/**
@@ -127,7 +105,6 @@ Raw output
 			$formattedTextResponse = 'No errors have been found.';
 		}
 
-
 		return new DataDisplayResponse(
 			$formattedTextResponse,
 			Http::STATUS_OK,
@@ -142,10 +119,6 @@ Raw output
 	 */
 	#[AuthorizedAdminSetting(settings: Overview::class)]
 	public function check() {
-		return new DataResponse(
-			[
-				'generic' => $this->setupCheckManager->runAll(),
-			]
-		);
+		return new DataResponse($this->setupCheckManager->runAll());
 	}
 }

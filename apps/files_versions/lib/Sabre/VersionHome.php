@@ -1,67 +1,64 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2018 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Files_Versions\Sabre;
 
-use OC\User\NoUserException;
 use OCA\Files_Versions\Versions\IVersionManager;
 use OCP\Files\IRootFolder;
 use OCP\IUserManager;
+use OCP\User\Exceptions\UserNotFoundException;
 use Sabre\DAV\Exception\Forbidden;
 use Sabre\DAV\ICollection;
 
 class VersionHome implements ICollection {
 
-	/** @var array */
-	private $principalInfo;
-
-	/** @var IRootFolder */
-	private $rootFolder;
-
-	/** @var IUserManager */
-	private $userManager;
-
-	/** @var IVersionManager */
-	private $versionManager;
-
-	public function __construct(array $principalInfo, IRootFolder $rootFolder, IUserManager $userManager, IVersionManager $versionManager) {
-		$this->principalInfo = $principalInfo;
-		$this->rootFolder = $rootFolder;
-		$this->userManager = $userManager;
-		$this->versionManager = $versionManager;
+	public function __construct(
+		private array $principalInfo,
+		private IRootFolder $rootFolder,
+		private IUserManager $userManager,
+		private IVersionManager $versionManager,
+	) {
 	}
 
 	private function getUser() {
 		[, $name] = \Sabre\Uri\split($this->principalInfo['uri']);
 		$user = $this->userManager->get($name);
-		if (!$user) {
-			throw new NoUserException();
+		if ($user === null) {
+			throw UserNotFoundException::createForUser($name);
 		}
 		return $user;
 	}
 
+	#[\Override]
 	public function delete() {
 		throw new Forbidden();
 	}
 
+	#[\Override]
 	public function getName(): string {
 		return $this->getUser()->getUID();
 	}
 
+	#[\Override]
 	public function setName($name) {
 		throw new Forbidden();
 	}
 
+	#[\Override]
 	public function createFile($name, $data = null) {
 		throw new Forbidden();
 	}
 
+	#[\Override]
 	public function createDirectory($name) {
 		throw new Forbidden();
 	}
 
+	#[\Override]
 	public function getChild($name) {
 		$user = $this->getUser();
 
@@ -73,6 +70,7 @@ class VersionHome implements ICollection {
 		}
 	}
 
+	#[\Override]
 	public function getChildren() {
 		$user = $this->getUser();
 
@@ -82,10 +80,12 @@ class VersionHome implements ICollection {
 		];
 	}
 
+	#[\Override]
 	public function childExists($name) {
 		return $name === 'versions' || $name === 'restore';
 	}
 
+	#[\Override]
 	public function getLastModified() {
 		return 0;
 	}

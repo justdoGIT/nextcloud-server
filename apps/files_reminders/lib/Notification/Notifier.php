@@ -14,6 +14,7 @@ use OCP\Files\FileInfo;
 use OCP\Files\IRootFolder;
 use OCP\IURLGenerator;
 use OCP\L10N\IFactory;
+use OCP\Notification\AlreadyProcessedException;
 use OCP\Notification\IAction;
 use OCP\Notification\INotification;
 use OCP\Notification\INotifier;
@@ -27,10 +28,12 @@ class Notifier implements INotifier {
 	) {
 	}
 
+	#[\Override]
 	public function getID(): string {
 		return Application::APP_ID;
 	}
 
+	#[\Override]
 	public function getName(): string {
 		return $this->l10nFactory->get(Application::APP_ID)->t('File reminders');
 	}
@@ -38,6 +41,7 @@ class Notifier implements INotifier {
 	/**
 	 * @throws UnknownNotificationException
 	 */
+	#[\Override]
 	public function prepare(INotification $notification, string $languageCode): INotification {
 		$l = $this->l10nFactory->get(Application::APP_ID, $languageCode);
 
@@ -51,8 +55,8 @@ class Notifier implements INotifier {
 				$fileId = $params['fileId'];
 
 				$node = $this->root->getUserFolder($notification->getUser())->getFirstNodeById($fileId);
-				if (!$node) {
-					throw new UnknownNotificationException();
+				if ($node === null) {
+					throw new AlreadyProcessedException();
 				}
 
 				$path = rtrim($node->getPath(), '/');
@@ -75,7 +79,7 @@ class Notifier implements INotifier {
 						[
 							'name' => [
 								'type' => 'highlight',
-								'id' => $node->getId(),
+								'id' => (string)$node->getId(),
 								'name' => $node->getName(),
 							],
 						],

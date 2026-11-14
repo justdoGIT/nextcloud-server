@@ -7,11 +7,10 @@
 </template>
 
 <script lang="ts">
+import StarSvg from '@mdi/svg/svg/star.svg?raw'
 import { translate as t } from '@nextcloud/l10n'
 import { defineComponent } from 'vue'
-
-import StarSvg from '@mdi/svg/svg/star.svg?raw'
-import NcIconSvgWrapper from '@nextcloud/vue/dist/Components/NcIconSvgWrapper.js'
+import NcIconSvgWrapper from '@nextcloud/vue/components/NcIconSvgWrapper'
 
 /**
  * A favorite icon to be used for overlaying favorite entries like the file preview / icon
@@ -29,17 +28,20 @@ export default defineComponent({
 	components: {
 		NcIconSvgWrapper,
 	},
+
 	data() {
 		return {
 			StarSvg,
 		}
 	},
+
 	async mounted() {
 		await this.$nextTick()
 		// MDI default viewBox is "0 0 24 24" but we add a stroke of 10px so we must adjust it
 		const el = this.$el.querySelector('svg')
 		el?.setAttribute?.('viewBox', '-4 -4 30 30')
 	},
+
 	methods: {
 		t,
 	},
@@ -56,8 +58,8 @@ export default defineComponent({
 	:deep() {
 		svg {
 			// We added a stroke for a11y so we must increase the size to include the stroke
-			width: 26px !important;
-			height: 26px !important;
+			width: 20px !important;
+			height: 20px !important;
 
 			// Override NcIconSvgWrapper defaults of 20px
 			max-width: unset !important;

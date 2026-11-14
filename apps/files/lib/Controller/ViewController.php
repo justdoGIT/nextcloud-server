@@ -5,17 +5,18 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Files\Controller;
 
 use OC\Files\FilenameValidator;
 use OC\Files\Filesystem;
 use OCA\Files\AppInfo\Application;
+use OCA\Files\ConfigLexicon;
 use OCA\Files\Event\LoadAdditionalScriptsEvent;
 use OCA\Files\Event\LoadSearchPlugins;
 use OCA\Files\Event\LoadSidebar;
 use OCA\Files\Service\UserConfig;
 use OCA\Files\Service\ViewConfig;
-use OCA\Viewer\Event\LoadViewer;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
@@ -25,7 +26,9 @@ use OCP\AppFramework\Http\ContentSecurityPolicy;
 use OCP\AppFramework\Http\RedirectResponse;
 use OCP\AppFramework\Http\Response;
 use OCP\AppFramework\Http\TemplateResponse;
+use OCP\AppFramework\Services\IAppConfig;
 use OCP\AppFramework\Services\IInitialState;
+use OCP\Authentication\TwoFactorAuth\IRegistry;
 use OCP\Collaboration\Resources\LoadAdditionalScriptsEvent as ResourcesLoadAdditionalScriptsEvent;
 use OCP\EventDispatcher\IEventDispatcher;
 use OCP\Files\Folder;
@@ -60,6 +63,8 @@ class ViewController extends Controller {
 		private UserConfig $userConfig,
 		private ViewConfig $viewConfig,
 		private FilenameValidator $filenameValidator,
+		private IRegistry $twoFactorRegistry,
+		private IAppConfig $appConfig,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -68,7 +73,7 @@ class ViewController extends Controller {
 	 * FIXME: Replace with non static code
 	 *
 	 * @return array
-	 * @throws \OCP\Files\NotFoundException
+	 * @throws NotFoundException
 	 */
 	protected function getStorageInfo(string $dir = '/') {
 		$rootInfo = Filesystem::getFileInfo('/', false);
@@ -82,56 +87,54 @@ class ViewController extends Controller {
 	 */
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
-	public function showFile(?string $fileid = null): Response {
+	public function showFile(?string $fileid = null, ?string $opendetails = null, ?string $openfile = null): Response {
 		if (!$fileid) {
 			return new RedirectResponse($this->urlGenerator->linkToRoute('files.view.index'));
 		}
 
 		// This is the entry point from the `/f/{fileid}` URL which is hardcoded in the server.
 		try {
-			return $this->redirectToFile((int)$fileid);
+			return $this->redirectToFile((int)$fileid, $opendetails, $openfile);
 		} catch (NotFoundException $e) {
-			return new RedirectResponse($this->urlGenerator->linkToRoute('files.view.index', ['fileNotFound' => true]));
+			// Keep the fileid even if not found, it will be used
+			// to detect the file could not be found and warn the user
+			return new RedirectResponse($this->urlGenerator->linkToRoute('files.view.indexViewFileid', ['fileid' => $fileid, 'view' => 'files']));
 		}
 	}
 
-
 	/**
 	 * @param string $dir
 	 * @param string $view
 	 * @param string $fileid
-	 * @param bool $fileNotFound
 	 * @return TemplateResponse|RedirectResponse
 	 */
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
-	public function indexView($dir = '', $view = '', $fileid = null, $fileNotFound = false) {
-		return $this->index($dir, $view, $fileid, $fileNotFound);
+	public function indexView($dir = '', $view = '', $fileid = null) {
+		return $this->index($dir, $view, $fileid);
 	}
 
 	/**
 	 * @param string $dir
 	 * @param string $view
 	 * @param string $fileid
-	 * @param bool $fileNotFound
 	 * @return TemplateResponse|RedirectResponse
 	 */
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
-	public function indexViewFileid($dir = '', $view = '', $fileid = null, $fileNotFound = false) {
-		return $this->index($dir, $view, $fileid, $fileNotFound);
+	public function indexViewFileid($dir = '', $view = '', $fileid = null) {
+		return $this->index($dir, $view, $fileid);
 	}
 
 	/**
 	 * @param string $dir
 	 * @param string $view
 	 * @param string $fileid
-	 * @param bool $fileNotFound
 	 * @return TemplateResponse|RedirectResponse
 	 */
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
-	public function index($dir = '', $view = '', $fileid = null, $fileNotFound = false) {
+	public function index($dir = '', $view = '', $fileid = null) {
 		if ($fileid !== null && $view !== 'trashbin') {
 			try {
 				return $this->redirectToFileIfInTrashbin((int)$fileid);
@@ -143,12 +146,14 @@ class ViewController extends Controller {
 		Util::addInitScript('files', 'init');
 		Util::addScript('files', 'main');
 
-		$userId = $this->userSession->getUser()->getUID();
+		$user = $this->userSession->getUser();
+		$userId = $user->getUID();
 
 		// If the file doesn't exists in the folder and
 		// exists in only one occurrence, redirect to that file
-		// in the correct folder
-		if ($fileid && $dir !== '') {
+		// in the correct folder. Only where dir is a path in the
+		// user's files: other views use it for their own ids (tags).
+		if ($fileid && $dir !== '' && in_array($view, ['', 'files', 'personal'], true)) {
 			$baseFolder = $this->rootFolder->getUserFolder($userId);
 			$nodes = $baseFolder->getById((int)$fileid);
 			if (!empty($nodes)) {
@@ -159,8 +164,6 @@ class ViewController extends Controller {
 				if (count($nodes) === 1 && $relativePath !== $dir && $nodePath !== $dir) {
 					return $this->redirectToFile((int)$fileid);
 				}
-			} else { // fileid does not exist anywhere
-				$fileNotFound = true;
 			}
 		}
 
@@ -174,6 +177,11 @@ class ViewController extends Controller {
 		$this->initialState->provideInitialState('storageStats', $storageInfo);
 		$this->initialState->provideInitialState('config', $this->userConfig->getConfigs());
 		$this->initialState->provideInitialState('viewConfigs', $this->viewConfig->getConfigs());
+		$this->initialState->provideInitialState('recent_limit', $this->appConfig->getAppValueInt(ConfigLexicon::RECENT_LIMIT, 100));
+		// Not yet consumed by the frontend, provided for future implementation
+		$this->initialState->provideInitialState('group_recent_files', $this->appConfig->getAppValueBool(ConfigLexicon::GROUP_RECENT_FILES, false));
+		$this->initialState->provideInitialState('recent_files_group_mime_types', $this->appConfig->getAppValueArray(ConfigLexicon::RECENT_FILES_GROUP_MIME_TYPES, []));
+		$this->initialState->provideInitialState('recent_files_group_timespan_minutes', $this->appConfig->getAppValueInt(ConfigLexicon::RECENT_FILES_GROUP_TIMESPAN_MINUTES, 2));
 
 		// File sorting user config
 		$filesSortingConfig = json_decode($this->config->getUserValue($userId, 'files', 'files_sorting_configs', '{}'), true);
@@ -189,13 +197,20 @@ class ViewController extends Controller {
 		$this->eventDispatcher->dispatchTyped(new ResourcesLoadAdditionalScriptsEvent());
 		$this->eventDispatcher->dispatchTyped(new LoadSidebar());
 		$this->eventDispatcher->dispatchTyped(new LoadSearchPlugins());
-		// Load Viewer scripts
-		if (class_exists(LoadViewer::class)) {
-			$this->eventDispatcher->dispatchTyped(new LoadViewer());
-		}
 
+		$this->initialState->provideInitialState('templates_enabled', true);
 		$this->initialState->provideInitialState('templates_path', $this->templateManager->hasTemplateDirectory() ? $this->templateManager->getTemplatePath() : false);
 		$this->initialState->provideInitialState('templates', $this->templateManager->listCreators());
+		$this->initialState->provideInitialState('localClientEnabled', $this->appConfig->getAppValueBool(ConfigLexicon::LOCAL_CLIENT_INTEGRATION));
+
+		$isTwoFactorEnabled = false;
+		foreach ($this->twoFactorRegistry->getProviderStates($user) as $providerId => $providerState) {
+			if ($providerId !== 'backup_codes' && $providerState === true) {
+				$isTwoFactorEnabled = true;
+			}
+		}
+
+		$this->initialState->provideInitialState('isTwoFactorEnabled', $isTwoFactorEnabled);
 
 		$response = new TemplateResponse(
 			Application::APP_ID,
@@ -248,10 +263,12 @@ class ViewController extends Controller {
 	 * Redirects to the file list and highlight the given file id
 	 *
 	 * @param int $fileId file id to show
+	 * @param string|null $openDetails open details parameter
+	 * @param string|null $openFile open file parameter
 	 * @return RedirectResponse redirect response or not found response
 	 * @throws NotFoundException
 	 */
-	private function redirectToFile(int $fileId) {
+	private function redirectToFile(int $fileId, ?string $openDetails = null, ?string $openFile = null): RedirectResponse {
 		$uid = $this->userSession->getUser()->getUID();
 		$baseFolder = $this->rootFolder->getUserFolder($uid);
 		$node = $baseFolder->getFirstNodeById($fileId);
@@ -273,6 +290,19 @@ class ViewController extends Controller {
 				// open the file by default (opening the viewer)
 				$params['openfile'] = 'true';
 			}
+
+			// Forward open parameters if any.
+			// - openfile is true by default
+			// - opendetails is undefined by default
+			// - both will be evaluated as truthy
+			if ($openDetails !== null) {
+				$params['opendetails'] = $openDetails !== 'false' ? 'true' : 'false';
+			}
+
+			if ($openFile !== null) {
+				$params['openfile'] = $openFile !== 'false' ? 'true' : 'false';
+			}
+
 			return new RedirectResponse($this->urlGenerator->linkToRoute('files.view.indexViewFileid', $params));
 		}
 

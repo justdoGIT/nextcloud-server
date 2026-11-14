@@ -6,14 +6,17 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2019 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCP\Security\Events;
 
 use OCP\EventDispatcher\Event;
 use OCP\Security\PasswordContext;
+use SensitiveParameter;
 
 /**
  * Event to request a secure password to be generated
  * @since 18.0.0
+ * @since 31.0.0 Provides ``getContext`` to apply different rules per password context, e.g. account or share passwords.
  */
 class GenerateSecurePasswordEvent extends Event {
 	private ?string $password;
@@ -49,7 +52,10 @@ class GenerateSecurePasswordEvent extends Event {
 	 * This is used by password generators to set the generated password.
 	 * @since 18.0.0
 	 */
-	public function setPassword(string $password): void {
+	public function setPassword(
+		#[SensitiveParameter]
+		string $password,
+	): void {
 		$this->password = $password;
 	}
 

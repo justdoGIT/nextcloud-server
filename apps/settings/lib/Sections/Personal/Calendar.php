@@ -15,26 +15,28 @@ use OCP\Settings\IIconSection;
 
 class Calendar implements IIconSection {
 
-	private IL10N $l;
-	private IURLGenerator $urlGenerator;
-
-	public function __construct(IL10N $l, IURLGenerator $urlGenerator) {
-		$this->l = $l;
-		$this->urlGenerator = $urlGenerator;
+	public function __construct(
+		private IL10N $l,
+		private IURLGenerator $urlGenerator,
+	) {
 	}
 
+	#[\Override]
 	public function getIcon(): string {
 		return $this->urlGenerator->imagePath('dav', 'calendar.svg');
 	}
 
+	#[\Override]
 	public function getID(): string {
 		return 'calendar';
 	}
 
+	#[\Override]
 	public function getName(): string {
 		return $this->l->t('Calendar');
 	}
 
+	#[\Override]
 	public function getPriority(): int {
 		return 50;
 	}

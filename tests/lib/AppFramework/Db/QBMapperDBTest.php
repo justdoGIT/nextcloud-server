@@ -1,4 +1,5 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
@@ -60,17 +61,17 @@ class QBDBTestMapper extends QBMapper {
 
 /**
  * Test real database handling (serialization)
- * @group DB
  */
+#[\PHPUnit\Framework\Attributes\Group('DB')]
 class QBMapperDBTest extends TestCase {
-	/** @var \Doctrine\DBAL\Connection|\OCP\IDBConnection */
-	protected $connection;
-	protected $schemaSetup = false;
+	protected IDBConnection $connection;
+	protected bool $schemaSetup = false;
 
+	#[\Override]
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->connection = \OCP\Server::get(IDBConnection::class);
+		$this->connection = Server::get(IDBConnection::class);
 		$this->prepareTestingTable();
 	}
 
@@ -124,6 +125,25 @@ class QBMapperDBTest extends TestCase {
 		$dbEntity = $mapper->getById($entity->getId());
 		$this->assertEquals($time->format('H:i:s'), $dbEntity->getTime()->format('H:i:s'));
 		$this->assertEquals($datetime->format('Y-m-d H:i:s'), $dbEntity->getDatetime()->format('Y-m-d H:i:s'));
+	}
+
+	public function testInsertIgnoreConflict(): void {
+		$mapper = new QBDBTestMapper($this->connection);
+
+		$entity = new class extends Entity {
+			protected ?string $datetime = null;
+		};
+		$entity->setId(200001);
+		$entity->setDatetime('2000-01-01 23:45:00');
+		$this->assertSame(1, $mapper->insertIgnoreConflict($entity));
+
+		$conflicting = clone $entity;
+		$conflicting->setDatetime('2010-05-05 05:05:05');
+		$this->assertSame(0, $mapper->insertIgnoreConflict($conflicting));
+
+		// the conflicting insert must not have modified the existing row
+		$dbEntity = $mapper->getById(200001);
+		$this->assertEquals('2000-01-01 23:45:00', $dbEntity->getDatetime()->format('Y-m-d H:i:s'));
 	}
 
 	protected function prepareTestingTable(): void {

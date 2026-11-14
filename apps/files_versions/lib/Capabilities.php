@@ -1,9 +1,13 @@
 <?php
+
+declare(strict_types=1);
+
 /**
  * SPDX-FileCopyrightText: 2019 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Files_Versions;
 
 use OCP\App\IAppManager;
@@ -11,15 +15,10 @@ use OCP\Capabilities\ICapability;
 use OCP\IConfig;
 
 class Capabilities implements ICapability {
-	private IConfig $config;
-	private IAppManager $appManager;
-
 	public function __construct(
-		IConfig $config,
-		IAppManager $appManager,
+		private IConfig $config,
+		private IAppManager $appManager,
 	) {
-		$this->config = $config;
-		$this->appManager = $appManager;
 	}
 
 	/**
@@ -27,6 +26,7 @@ class Capabilities implements ICapability {
 	 *
 	 * @return array{files: array{versioning: bool, version_labeling: bool, version_deletion: bool}}
 	 */
+	#[\Override]
 	public function getCapabilities() {
 		return [
 			'files' => [

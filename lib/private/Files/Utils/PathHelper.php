@@ -5,6 +5,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2022 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OC\Files\Utils;
 
 class PathHelper {
@@ -16,7 +17,7 @@ class PathHelper {
 	 * @return ?string
 	 */
 	public static function getRelativePath(string $root, string $path) {
-		if ($root === '' or $root === '/') {
+		if ($root === '' || $root === '/') {
 			return self::normalizePath($path);
 		}
 		if ($path === $root) {
@@ -34,9 +35,14 @@ class PathHelper {
 	 * @return string
 	 */
 	public static function normalizePath(string $path): string {
-		if ($path === '' or $path === '/') {
+		if ($path === '' || $path === '/') {
 			return '/';
 		}
+		// Use the same Unicode normalization as Filesystem::normalizePath(),
+		// so that node paths match the filecache
+		$path = \Normalizer::normalize($path) ?: $path;
+		// No null bytes
+		$path = str_replace(chr(0), '', $path);
 		//no windows style slashes
 		$path = str_replace('\\', '/', $path);
 		//add leading slash

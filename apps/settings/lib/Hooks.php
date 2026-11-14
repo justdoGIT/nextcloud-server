@@ -1,13 +1,19 @@
 <?php
+
+declare(strict_types=1);
+
 /**
  * SPDX-FileCopyrightText: 2017 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Settings;
 
 use OCA\Settings\Activity\Provider;
 use OCP\Activity\IManager as IActivityManager;
 use OCP\Defaults;
+use OCP\EventDispatcher\Event;
+use OCP\EventDispatcher\IEventListener;
 use OCP\IConfig;
 use OCP\IGroupManager;
 use OCP\IURLGenerator;
@@ -15,59 +21,44 @@ use OCP\IUser;
 use OCP\IUserManager;
 use OCP\IUserSession;
 use OCP\L10N\IFactory;
+use OCP\Mail\EMailDetails;
+use OCP\Mail\IEMailTemplate;
 use OCP\Mail\IMailer;
+use OCP\User\Events\PasswordUpdatedEvent;
+use OCP\User\Events\UserChangedEvent;
 
-class Hooks {
+/**
+ * @template-implements IEventListener<PasswordUpdatedEvent|UserChangedEvent>
+ */
+class Hooks implements IEventListener {
 
-	/** @var IActivityManager */
-	protected $activityManager;
-	/** @var IGroupManager|\OC\Group\Manager */
-	protected $groupManager;
-	/** @var IUserManager */
-	protected $userManager;
-	/** @var IUserSession */
-	protected $userSession;
-	/** @var IURLGenerator */
-	protected $urlGenerator;
-	/** @var IMailer */
-	protected $mailer;
-	/** @var IConfig */
-	protected $config;
-	/** @var IFactory */
-	protected $languageFactory;
-	/** @var Defaults */
-	protected $defaults;
-
-	public function __construct(IActivityManager $activityManager,
-		IGroupManager $groupManager,
-		IUserManager $userManager,
-		IUserSession $userSession,
-		IURLGenerator $urlGenerator,
-		IMailer $mailer,
-		IConfig $config,
-		IFactory $languageFactory,
-		Defaults $defaults) {
-		$this->activityManager = $activityManager;
-		$this->groupManager = $groupManager;
-		$this->userManager = $userManager;
-		$this->userSession = $userSession;
-		$this->urlGenerator = $urlGenerator;
-		$this->mailer = $mailer;
-		$this->config = $config;
-		$this->languageFactory = $languageFactory;
-		$this->defaults = $defaults;
+	public function __construct(
+		protected IActivityManager $activityManager,
+		protected IGroupManager $groupManager,
+		protected IUserManager $userManager,
+		protected IUserSession $userSession,
+		protected IURLGenerator $urlGenerator,
+		protected IMailer $mailer,
+		protected IConfig $config,
+		protected IFactory $languageFactory,
+		protected Defaults $defaults,
+	) {
 	}
 
-	/**
-	 * @param string $uid
-	 * @throws \InvalidArgumentException
-	 * @throws \BadMethodCallException
-	 * @throws \Exception
-	 */
-	public function onChangePassword($uid) {
-		$user = $this->userManager->get($uid);
+	#[\Override]
+	public function handle(Event $event): void {
+		if ($event instanceof PasswordUpdatedEvent) {
+			$this->onChangePassword($event);
+		}
+		if ($event instanceof UserChangedEvent) {
+			$this->onChangeEmail($event);
+		}
+	}
 
-		if (!$user instanceof IUser || $user->getLastLogin() === 0) {
+	public function onChangePassword(PasswordUpdatedEvent $handle): void {
+		$user = $handle->getUser();
+
+		if ($user->getLastLogin() === 0) {
 			// User didn't login, so don't create activities and emails.
 			return;
 		}
@@ -114,14 +105,16 @@ class Hooks {
 				'displayname' => $user->getDisplayName(),
 				'emailAddress' => $user->getEMailAddress(),
 				'instanceUrl' => $instanceUrl,
+				'event' => $handle,
 			]);
+			$template->setLanguage($l->getLanguageCode());
 
 			$template->setSubject($l->t('Password for %1$s changed on %2$s', [$user->getDisplayName(), $instanceName]));
 			$template->addHeader();
 			$template->addHeading($l->t('Password changed for %s', [$user->getDisplayName()]), false);
-			$template->addBodyText($text . ' ' . $l->t('If you did not request this, please contact an administrator.'));
+			$template->addBodyText($text);
+			$template->addBodyNote($l->t('If you did not request this, please contact an administrator.'), '', IEMailTemplate::NOTE_WARNING);
 			$template->addFooter();
-
 
 			$message = $this->mailer->createMessage();
 			$message->setTo([$user->getEMailAddress() => $user->getDisplayName()]);
@@ -130,15 +123,16 @@ class Hooks {
 		}
 	}
 
-	/**
-	 * @param IUser $user
-	 * @param string|null $oldMailAddress
-	 * @throws \InvalidArgumentException
-	 * @throws \BadMethodCallException
-	 */
-	public function onChangeEmail(IUser $user, $oldMailAddress) {
-		if ($oldMailAddress === $user->getEMailAddress() ||
-			$user->getLastLogin() === 0) {
+	public function onChangeEmail(UserChangedEvent $handle): void {
+		if ($handle->getFeature() !== 'eMailAddress') {
+			return;
+		}
+
+		$oldMailAddress = $handle->getOldValue();
+		$user = $handle->getUser();
+
+		if ($oldMailAddress === $user->getEMailAddress()
+			|| $user->getLastLogin() === 0) {
 			// Email didn't really change or user didn't login,
 			// so don't create activities and emails.
 			return;
@@ -149,6 +143,7 @@ class Hooks {
 			->setType('personal_settings')
 			->setAffectedUser($user->getUID());
 
+		$instanceName = $this->defaults->getName();
 		$instanceUrl = $this->urlGenerator->getAbsoluteURL('/');
 		$language = $this->languageFactory->getUserLanguage($user);
 		$l = $this->languageFactory->get('settings', $language);
@@ -176,7 +171,6 @@ class Hooks {
 		}
 		$this->activityManager->publish($event);
 
-
 		if ($oldMailAddress !== null) {
 			$template = $this->mailer->createEMailTemplate('settings.EmailChanged', [
 				'displayname' => $user->getDisplayName(),
@@ -184,16 +178,23 @@ class Hooks {
 				'oldEMailAddress' => $oldMailAddress,
 				'instanceUrl' => $instanceUrl,
 			]);
+			$template->setLanguage($l->getLanguageCode());
 
-			$template->setSubject($l->t('Email address for %1$s changed on %2$s', [$user->getDisplayName(), $instanceUrl]));
+			$template->setSubject($l->t('Email address for %1$s changed on %2$s', [$user->getDisplayName(), $instanceName]));
 			$template->addHeader();
 			$template->addHeading($l->t('Email address changed for %s', [$user->getDisplayName()]), false);
-			$template->addBodyText($text . ' ' . $l->t('If you did not request this, please contact an administrator.'));
+			$template->addBodyText($text);
+			$details = (new EMailDetails($user->getDisplayName()))->setInitials($user->getDisplayName());
+			$details->addRow($l->t('Previous email address'))->text($oldMailAddress);
+			$newMailAddress = $details->addRow($l->t('New email address'));
 			if ($user->getEMailAddress()) {
-				$template->addBodyText($l->t('The new email address is %s', [$user->getEMailAddress()]));
+				$newMailAddress->text($user->getEMailAddress());
+			} else {
+				$newMailAddress->muted($l->t('No email address set'));
 			}
+			$template->addBodyDetails($details);
+			$template->addBodyNote($l->t('If you did not request this, please contact an administrator.'), '', IEMailTemplate::NOTE_WARNING);
 			$template->addFooter();
-
 
 			$message = $this->mailer->createMessage();
 			$message->setTo([$oldMailAddress => $user->getDisplayName()]);

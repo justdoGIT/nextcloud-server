@@ -1,8 +1,10 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Files\Activity;
 
 use OCP\Activity\Exceptions\UnknownActivityException;
@@ -23,56 +25,24 @@ use OCP\IUserManager;
 use OCP\L10N\IFactory;
 
 class Provider implements IProvider {
-	/** @var IFactory */
-	protected $languageFactory;
-
 	/** @var IL10N */
 	protected $l;
-	/** @var IL10N */
-	protected $activityLang;
-
-	/** @var IURLGenerator */
-	protected $url;
-
-	/** @var IManager */
-	protected $activityManager;
-
-	/** @var IUserManager */
-	protected $userManager;
-
-	/** @var IRootFolder */
-	protected $rootFolder;
-
-	/** @var IEventMerger */
-	protected $eventMerger;
-
-	/** @var ICloudIdManager */
-	protected $cloudIdManager;
-
-	/** @var IContactsManager */
-	protected $contactsManager;
 
 	/** @var string[] cached displayNames - key is the cloud id and value the displayname */
 	protected $displayNames = [];
 
 	protected $fileIsEncrypted = false;
 
-	public function __construct(IFactory $languageFactory,
-		IURLGenerator $url,
-		IManager $activityManager,
-		IUserManager $userManager,
-		IRootFolder $rootFolder,
-		ICloudIdManager $cloudIdManager,
-		IContactsManager $contactsManager,
-		IEventMerger $eventMerger) {
-		$this->languageFactory = $languageFactory;
-		$this->url = $url;
-		$this->activityManager = $activityManager;
-		$this->userManager = $userManager;
-		$this->rootFolder = $rootFolder;
-		$this->cloudIdManager = $cloudIdManager;
-		$this->contactsManager = $contactsManager;
-		$this->eventMerger = $eventMerger;
+	public function __construct(
+		protected IFactory $languageFactory,
+		protected IURLGenerator $url,
+		protected IManager $activityManager,
+		protected IUserManager $userManager,
+		protected IRootFolder $rootFolder,
+		protected ICloudIdManager $cloudIdManager,
+		protected IContactsManager $contactsManager,
+		protected IEventMerger $eventMerger,
+	) {
 	}
 
 	/**
@@ -83,13 +53,13 @@ class Provider implements IProvider {
 	 * @throws UnknownActivityException
 	 * @since 11.0.0
 	 */
+	#[\Override]
 	public function parse($language, IEvent $event, ?IEvent $previousEvent = null) {
 		if ($event->getApp() !== 'files') {
 			throw new UnknownActivityException();
 		}
 
 		$this->l = $this->languageFactory->get('files', $language);
-		$this->activityLang = $this->languageFactory->get('activity', $language);
 
 		if ($this->activityManager->isFormattingFilteredObject()) {
 			try {
@@ -144,7 +114,7 @@ class Provider implements IProvider {
 
 		if (!isset($parsedParameters['user'])) {
 			// External user via public link share
-			$subject = str_replace('{user}', $this->activityLang->t('"remote account"'), $subject);
+			$subject = str_replace('{user}', $this->l->t('"remote account"'), $subject);
 		}
 
 		$this->setSubjects($event, $subject, $parsedParameters);
@@ -262,7 +232,7 @@ class Provider implements IProvider {
 
 		if (!isset($parsedParameters['user'])) {
 			// External user via public link share
-			$subject = str_replace('{user}', $this->activityLang->t('"remote account"'), $subject);
+			$subject = str_replace('{user}', $this->l->t('"remote account"'), $subject);
 		}
 
 		$this->setSubjects($event, $subject, $parsedParameters);
@@ -352,7 +322,7 @@ class Provider implements IProvider {
 	protected function getFile($parameter, ?IEvent $event = null): array {
 		if (is_array($parameter)) {
 			$path = reset($parameter);
-			$id = (string)key($parameter);
+			$id = (int)key($parameter);
 		} elseif ($event !== null) {
 			// Legacy from before ownCloud 8.2
 			$path = $parameter;
@@ -374,7 +344,7 @@ class Provider implements IProvider {
 
 				return [
 					'type' => 'file',
-					'id' => $encryptionContainer->getId(),
+					'id' => (string)$encryptionContainer->getId(),
 					'name' => $encryptionContainer->getName(),
 					'path' => $path,
 					'link' => $this->url->linkToRouteAbsolute('files.viewcontroller.showFile', ['fileid' => $encryptionContainer->getId()]),
@@ -387,7 +357,7 @@ class Provider implements IProvider {
 
 		return [
 			'type' => 'file',
-			'id' => $id,
+			'id' => (string)$id,
 			'name' => basename($path),
 			'path' => trim($path, '/'),
 			'link' => $this->url->linkToRouteAbsolute('files.viewcontroller.showFile', ['fileid' => $id]),
@@ -533,7 +503,7 @@ class Provider implements IProvider {
 			'strict_search' => true,
 		]);
 		foreach ($addressBookContacts as $contact) {
-			if (isset($contact['isLocalSystemBook'])) {
+			if (isset($contact['isLocalSystemBook']) || isset($contact['isVirtualAddressbook'])) {
 				continue;
 			}
 

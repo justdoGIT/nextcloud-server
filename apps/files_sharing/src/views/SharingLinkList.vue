@@ -4,41 +4,45 @@
 -->
 
 <template>
-	<ul v-if="canLinkShare"
+	<ul
+		v-if="canLinkShare"
 		:aria-label="t('files_sharing', 'Link shares')"
 		class="sharing-link-list">
-		<!-- If no link shares, show the add link default entry -->
-		<SharingEntryLink v-if="!hasLinkShares && canReshare"
-			:can-reshare="canReshare"
-			:file-info="fileInfo"
-			@add:share="addShare" />
-
 		<!-- Else we display the list -->
 		<template v-if="hasShares">
-			<!-- using shares[index] to work with .sync -->
-			<SharingEntryLink v-for="(share, index) in shares"
+			<!-- using shares[index] to work with v-model -->
+			<SharingEntryLink
+				v-for="(share, index) in shares"
 				:key="share.id"
+				ref="entries"
+				v-model:share="shares[index]"
 				:index="shares.length > 1 ? index + 1 : null"
 				:can-reshare="canReshare"
-				:share.sync="shares[index]"
 				:file-info="fileInfo"
-				@add:share="addShare(...arguments)"
-				@update:share="awaitForShare(...arguments)"
+				@add:share="addShare"
+				@update:share="awaitForShare"
 				@remove:share="removeShare"
 				@open-sharing-details="openSharingDetails(share)" />
 		</template>
+
+		<!-- If no link shares, show the add link default entry -->
+		<SharingEntryLink
+			v-if="!hasLinkShares && canReshare"
+			:can-reshare="canReshare"
+			:file-info="fileInfo"
+			@add:share="addShare" />
 	</ul>
 </template>
 
 <script>
 import { getCapabilities } from '@nextcloud/capabilities'
 import { t } from '@nextcloud/l10n'
-
-import Share from '../models/Share.js'
-import ShareTypes from '../mixins/ShareTypes.js'
+import { ShareType } from '@nextcloud/sharing'
+import { toRaw } from 'vue'
 import SharingEntryLink from '../components/SharingEntryLink.vue'
 import ShareDetails from '../mixins/ShareDetails.js'
 
+/** @typedef {import('../models/Share.js').default} Share */
 export default {
 	name: 'SharingLinkList',
 
@@ -46,19 +50,19 @@ export default {
 		SharingEntryLink,
 	},
 
-	mixins: [ShareTypes, ShareDetails],
+	mixins: [ShareDetails],
 
 	props: {
 		fileInfo: {
 			type: Object,
-			default: () => {},
 			required: true,
 		},
+
 		shares: {
 			type: Array,
-			default: () => [],
 			required: true,
 		},
+
 		canReshare: {
 			type: Boolean,
 			required: true,
@@ -80,7 +84,7 @@ export default {
 		 * @return {Array}
 		 */
 		hasLinkShares() {
-			return this.shares.filter(share => share.type === this.SHARE_TYPES.SHARE_TYPE_LINK).length > 0
+			return this.shares.filter((share) => share.type === ShareType.Link).length > 0
 		},
 
 		/**
@@ -105,7 +109,7 @@ export default {
 		 */
 		addShare(share, resolve) {
 			// eslint-disable-next-line vue/no-mutating-props
-			this.shares.unshift(share)
+			this.shares.push(share)
 			this.awaitForShare(share, resolve)
 		},
 
@@ -119,7 +123,7 @@ export default {
 		 */
 		awaitForShare(share, resolve) {
 			this.$nextTick(() => {
-				const newShare = this.$children.find(component => component.share === share)
+				const newShare = this.$refs.entries?.find((component) => toRaw(component.share) === toRaw(share))
 				if (newShare) {
 					resolve(newShare)
 				}
@@ -132,7 +136,7 @@ export default {
 		 * @param {Share} share the share to remove
 		 */
 		removeShare(share) {
-			const index = this.shares.findIndex(item => item === share)
+			const index = this.shares.findIndex((item) => item === share)
 			// eslint-disable-next-line vue/no-mutating-props
 			this.shares.splice(index, 1)
 		},

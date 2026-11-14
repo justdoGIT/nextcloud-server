@@ -1,8 +1,11 @@
 <?php
+
+declare(strict_types=1);
 /**
  * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Theming\Tests;
 
 use OCA\Theming\Capabilities;
@@ -16,20 +19,19 @@ use OCP\Capabilities\ICapability;
 use OCP\IL10N;
 use OCP\Settings\IIconSection;
 use OCP\Settings\ISettings;
+use Psr\Container\ContainerInterface;
 use Test\TestCase;
 
 /**
  * Class ServicesTest
  *
- * @group DB
  * @package OCA\Theming\Tests
  */
+#[\PHPUnit\Framework\Attributes\Group(name: 'DB')]
 class ServicesTest extends TestCase {
-	/** @var \OCA\Activity\AppInfo\Application */
-	protected $app;
+	protected App $app;
 
-	/** @var \OCP\AppFramework\IAppContainer */
-	protected $container;
+	protected ContainerInterface $container;
 
 	protected function setUp(): void {
 		parent::setUp();
@@ -37,7 +39,7 @@ class ServicesTest extends TestCase {
 		$this->container = $this->app->getContainer();
 	}
 
-	public function queryData() {
+	public static function queryData(): array {
 		return [
 			[IL10N::class],
 
@@ -59,15 +61,11 @@ class ServicesTest extends TestCase {
 		];
 	}
 
-	/**
-	 * @dataProvider queryData
-	 * @param string $service
-	 * @param string $expected
-	 */
-	public function testContainerQuery($service, $expected = null): void {
+	#[\PHPUnit\Framework\Attributes\DataProvider(methodName: 'queryData')]
+	public function testContainerQuery(string $service, ?string $expected = null): void {
 		if ($expected === null) {
 			$expected = $service;
 		}
-		$this->assertTrue($this->container->query($service) instanceof $expected);
+		$this->assertInstanceOf($expected, $this->container->get($service));
 	}
 }

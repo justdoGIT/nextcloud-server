@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2022 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Listener;
 
 use OCA\DAV\CalDAV\Activity\Backend;
@@ -16,18 +17,16 @@ use Psr\Log\LoggerInterface;
 
 /** @template-implements IEventListener<CalendarShareUpdatedEvent> */
 class CalendarShareUpdateListener implements IEventListener {
-	private Backend $activityBackend;
-	private LoggerInterface $logger;
-
-	public function __construct(Backend $activityBackend,
-		LoggerInterface $logger) {
-		$this->activityBackend = $activityBackend;
-		$this->logger = $logger;
+	public function __construct(
+		private Backend $activityBackend,
+		private LoggerInterface $logger,
+	) {
 	}
 
 	/**
 	 * In case the user has set their default calendar to the deleted one
 	 */
+	#[\Override]
 	public function handle(Event $event): void {
 		if (!($event instanceof CalendarShareUpdatedEvent)) {
 			// Not what we subscribed to
@@ -42,5 +41,7 @@ class CalendarShareUpdateListener implements IEventListener {
 			$event->getAdded(),
 			$event->getRemoved()
 		);
+
+		// Here we should recalculate if reminders should be sent to new or old sharees
 	}
 }

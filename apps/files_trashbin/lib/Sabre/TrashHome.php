@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2018 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Files_Trashbin\Sabre;
 
 use OCA\Files_Trashbin\Trash\ITrashManager;
@@ -15,46 +16,40 @@ use Sabre\DAV\Exception\NotFound;
 use Sabre\DAV\ICollection;
 
 class TrashHome implements ICollection {
-	/** @var ITrashManager */
-	private $trashManager;
-
-	/** @var array */
-	private $principalInfo;
-
-	/** @var IUser */
-	private $user;
-
 	public function __construct(
-		array $principalInfo,
-		ITrashManager $trashManager,
-		IUser $user,
+		private array $principalInfo,
+		private ITrashManager $trashManager,
+		private IUser $user,
 	) {
-		$this->principalInfo = $principalInfo;
-		$this->trashManager = $trashManager;
-		$this->user = $user;
 	}
 
+	#[\Override]
 	public function delete() {
 		throw new Forbidden();
 	}
 
+	#[\Override]
 	public function getName(): string {
 		[, $name] = \Sabre\Uri\split($this->principalInfo['uri']);
 		return $name;
 	}
 
+	#[\Override]
 	public function setName($name) {
 		throw new Forbidden('Permission denied to rename this trashbin');
 	}
 
+	#[\Override]
 	public function createFile($name, $data = null) {
 		throw new Forbidden('Not allowed to create files in the trashbin');
 	}
 
+	#[\Override]
 	public function createDirectory($name) {
 		throw new Forbidden('Not allowed to create folders in the trashbin');
 	}
 
+	#[\Override]
 	public function getChild($name) {
 		if ($name === 'restore') {
 			return new RestoreFolder();
@@ -66,6 +61,7 @@ class TrashHome implements ICollection {
 		throw new NotFound();
 	}
 
+	#[\Override]
 	public function getChildren(): array {
 		return [
 			new RestoreFolder(),
@@ -73,10 +69,12 @@ class TrashHome implements ICollection {
 		];
 	}
 
+	#[\Override]
 	public function childExists($name): bool {
 		return $name === 'restore' || $name === 'trash';
 	}
 
+	#[\Override]
 	public function getLastModified(): int {
 		return 0;
 	}

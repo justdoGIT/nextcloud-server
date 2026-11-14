@@ -1,8 +1,12 @@
 <?php
+
+declare(strict_types=1);
+
 /**
  * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Theming\Settings;
 
 use OCP\IL10N;
@@ -10,14 +14,11 @@ use OCP\IURLGenerator;
 use OCP\Settings\IIconSection;
 
 class AdminSection implements IIconSection {
-	private string $appName;
-	private IL10N $l;
-	private IURLGenerator $url;
-
-	public function __construct(string $appName, IURLGenerator $url, IL10N $l) {
-		$this->appName = $appName;
-		$this->url = $url;
-		$this->l = $l;
+	public function __construct(
+		private string $appName,
+		private IURLGenerator $url,
+		private IL10N $l,
+	) {
 	}
 
 	/**
@@ -26,6 +27,7 @@ class AdminSection implements IIconSection {
 	 *
 	 * @returns string
 	 */
+	#[\Override]
 	public function getID() {
 		return $this->appName;
 	}
@@ -36,6 +38,7 @@ class AdminSection implements IIconSection {
 	 *
 	 * @return string
 	 */
+	#[\Override]
 	public function getName() {
 		return $this->l->t('Theming');
 	}
@@ -47,6 +50,7 @@ class AdminSection implements IIconSection {
 	 *
 	 * E.g.: 70
 	 */
+	#[\Override]
 	public function getPriority() {
 		return 30;
 	}
@@ -54,6 +58,7 @@ class AdminSection implements IIconSection {
 	/**
 	 * {@inheritdoc}
 	 */
+	#[\Override]
 	public function getIcon() {
 		return $this->url->imagePath($this->appName, 'app-dark.svg');
 	}

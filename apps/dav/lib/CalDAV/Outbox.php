@@ -1,11 +1,17 @@
 <?php
+
+declare(strict_types=1);
+
 /**
  * SPDX-FileCopyrightText: 2018 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\CalDAV;
 
-use OCP\IConfig;
+use OCA\DAV\AppInfo\Application;
+use OCA\DAV\ConfigLexicon;
+use OCP\IAppConfig;
 use Sabre\CalDAV\Plugin as CalDAVPlugin;
 
 /**
@@ -15,21 +21,20 @@ use Sabre\CalDAV\Plugin as CalDAVPlugin;
  */
 class Outbox extends \Sabre\CalDAV\Schedule\Outbox {
 
-	/** @var IConfig */
-	private $config;
-
 	/** @var null|bool */
 	private $disableFreeBusy = null;
 
 	/**
 	 * Outbox constructor.
 	 *
-	 * @param IConfig $config
+	 * @param IAppConfig $appConfig
 	 * @param string $principalUri
 	 */
-	public function __construct(IConfig $config, string $principalUri) {
+	public function __construct(
+		private IAppConfig $appConfig,
+		string $principalUri,
+	) {
 		parent::__construct($principalUri);
-		$this->config = $config;
 	}
 
 	/**
@@ -44,10 +49,11 @@ class Outbox extends \Sabre\CalDAV\Schedule\Outbox {
 	 *
 	 * @return array
 	 */
+	#[\Override]
 	public function getACL() {
 		// getACL is called so frequently that we cache the config result
 		if ($this->disableFreeBusy === null) {
-			$this->disableFreeBusy = ($this->config->getAppValue('dav', 'disableFreeBusy', 'no') === 'yes');
+			$this->disableFreeBusy = $this->appConfig->getValueBool(Application::APP_ID, ConfigLexicon::DISABLE_FREE_BUSY);
 		}
 
 		$commonAcl = [

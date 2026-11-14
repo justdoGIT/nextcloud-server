@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2019 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\CalDAV\Reminder\NotificationProvider;
 
 use OCA\DAV\CalDAV\Reminder\INotificationProvider;
@@ -29,31 +30,18 @@ abstract class AbstractProvider implements INotificationProvider {
 	/** @var string */
 	public const NOTIFICATION_TYPE = '';
 
-	protected LoggerInterface $logger;
-
-	/** @var L10NFactory */
-	protected $l10nFactory;
-
 	/** @var IL10N[] */
 	private $l10ns;
 
 	/** @var string */
 	private $fallbackLanguage;
 
-	/** @var IURLGenerator */
-	protected $urlGenerator;
-
-	/** @var IConfig */
-	protected $config;
-
-	public function __construct(LoggerInterface $logger,
-		L10NFactory $l10nFactory,
-		IURLGenerator $urlGenerator,
-		IConfig $config) {
-		$this->logger = $logger;
-		$this->l10nFactory = $l10nFactory;
-		$this->urlGenerator = $urlGenerator;
-		$this->config = $config;
+	public function __construct(
+		protected LoggerInterface $logger,
+		protected L10NFactory $l10nFactory,
+		protected IURLGenerator $urlGenerator,
+		protected IConfig $config,
+	) {
 	}
 
 	/**
@@ -65,6 +53,7 @@ abstract class AbstractProvider implements INotificationProvider {
 	 * @param IUser[] $users
 	 * @return void
 	 */
+	#[\Override]
 	abstract public function send(VEvent $vevent,
 		?string $calendarDisplayName,
 		array $principalEmailAddresses,

@@ -5,6 +5,7 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\Comments;
 
 use OCP\Comments\IComment;
@@ -30,37 +31,19 @@ class CommentNode implements \Sabre\DAV\INode, \Sabre\DAV\IProperties {
 	public const PROPERTY_NAME_MENTION_ID = '{http://owncloud.org/ns}mentionId';
 	public const PROPERTY_NAME_MENTION_DISPLAYNAME = '{http://owncloud.org/ns}mentionDisplayName';
 
-	/** @var IComment */
-	public $comment;
-
-	/** @var ICommentsManager */
-	protected $commentsManager;
-
-	protected LoggerInterface $logger;
-
 	/** @var array list of properties with key being their name and value their setter */
 	protected $properties = [];
-
-	/** @var IUserManager */
-	protected $userManager;
-
-	/** @var IUserSession */
-	protected $userSession;
 
 	/**
 	 * CommentNode constructor.
 	 */
 	public function __construct(
-		ICommentsManager $commentsManager,
-		IComment $comment,
-		IUserManager $userManager,
-		IUserSession $userSession,
-		LoggerInterface $logger,
+		protected ICommentsManager $commentsManager,
+		public IComment $comment,
+		protected IUserManager $userManager,
+		protected IUserSession $userSession,
+		protected LoggerInterface $logger,
 	) {
-		$this->commentsManager = $commentsManager;
-		$this->comment = $comment;
-		$this->logger = $logger;
-
 		$methods = get_class_methods($this->comment);
 		$methods = array_filter($methods, function ($name) {
 			return str_starts_with($name, 'get');
@@ -72,8 +55,6 @@ class CommentNode implements \Sabre\DAV\INode, \Sabre\DAV\IProperties {
 			$name = '{' . self::NS_OWNCLOUD . '}' . lcfirst(substr($getter, 3));
 			$this->properties[$name] = $getter;
 		}
-		$this->userManager = $userManager;
-		$this->userSession = $userSession;
 	}
 
 	/**
@@ -121,6 +102,7 @@ class CommentNode implements \Sabre\DAV\INode, \Sabre\DAV\IProperties {
 	 *
 	 * @return void
 	 */
+	#[\Override]
 	public function delete() {
 		$this->checkWriteAccessOnComment();
 		$this->commentsManager->delete($this->comment->getId());
@@ -133,6 +115,7 @@ class CommentNode implements \Sabre\DAV\INode, \Sabre\DAV\IProperties {
 	 *
 	 * @return string
 	 */
+	#[\Override]
 	public function getName() {
 		return $this->comment->getId();
 	}
@@ -143,6 +126,7 @@ class CommentNode implements \Sabre\DAV\INode, \Sabre\DAV\IProperties {
 	 * @param string $name The new name
 	 * @throws MethodNotAllowed
 	 */
+	#[\Override]
 	public function setName($name) {
 		throw new MethodNotAllowed();
 	}
@@ -150,6 +134,7 @@ class CommentNode implements \Sabre\DAV\INode, \Sabre\DAV\IProperties {
 	/**
 	 * Returns the last modification time, as a unix timestamp
 	 */
+	#[\Override]
 	public function getLastModified(): ?int {
 		return null;
 	}
@@ -190,6 +175,7 @@ class CommentNode implements \Sabre\DAV\INode, \Sabre\DAV\IProperties {
 	 * @param PropPatch $propPatch
 	 * @return void
 	 */
+	#[\Override]
 	public function propPatch(PropPatch $propPatch) {
 		// other properties than 'message' are read only
 		$propPatch->handle(self::PROPERTY_NAME_MESSAGE, [$this, 'updateComment']);
@@ -210,6 +196,7 @@ class CommentNode implements \Sabre\DAV\INode, \Sabre\DAV\IProperties {
 	 * @param array $properties
 	 * @return array
 	 */
+	#[\Override]
 	public function getProperties($properties) {
 		$properties = array_keys($this->properties);
 

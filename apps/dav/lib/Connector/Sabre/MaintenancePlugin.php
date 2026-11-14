@@ -5,6 +5,7 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\Connector\Sabre;
 
 use OCA\DAV\Exception\ServerMaintenanceMode;
@@ -16,12 +17,6 @@ use Sabre\DAV\ServerPlugin;
 
 class MaintenancePlugin extends ServerPlugin {
 
-	/** @var IConfig */
-	private $config;
-
-	/** @var \OCP\IL10N */
-	private $l10n;
-
 	/**
 	 * Reference to main server object
 	 *
@@ -32,11 +27,11 @@ class MaintenancePlugin extends ServerPlugin {
 	/**
 	 * @param IConfig $config
 	 */
-	public function __construct(IConfig $config, IL10N $l10n) {
-		$this->config = $config;
-		$this->l10n = \OC::$server->getL10N('dav');
+	public function __construct(
+		private readonly IConfig $config,
+		private readonly IL10N $l10n,
+	) {
 	}
-
 
 	/**
 	 * This initializes the plugin.
@@ -49,6 +44,7 @@ class MaintenancePlugin extends ServerPlugin {
 	 * @param \Sabre\DAV\Server $server
 	 * @return void
 	 */
+	#[\Override]
 	public function initialize(\Sabre\DAV\Server $server) {
 		$this->server = $server;
 		$this->server->on('beforeMethod:*', [$this, 'checkMaintenanceMode'], 1);
@@ -59,9 +55,8 @@ class MaintenancePlugin extends ServerPlugin {
 	 * in case the system is in maintenance mode.
 	 *
 	 * @throws ServiceUnavailable
-	 * @return bool
 	 */
-	public function checkMaintenanceMode() {
+	public function checkMaintenanceMode(): bool {
 		if ($this->config->getSystemValueBool('maintenance')) {
 			throw new ServerMaintenanceMode($this->l10n->t('System is in maintenance mode.'));
 		}

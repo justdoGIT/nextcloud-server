@@ -18,12 +18,12 @@ use OCP\IURLGenerator;
 
 class ChangePasswordHandler implements IHandler {
 
-	private IURLGenerator $urlGenerator;
-
-	public function __construct(IURLGenerator $urlGenerator) {
-		$this->urlGenerator = $urlGenerator;
+	public function __construct(
+		private IURLGenerator $urlGenerator,
+	) {
 	}
 
+	#[\Override]
 	public function handle(string $service, IRequestContext $context, ?IResponse $previousResponse): ?IResponse {
 		if ($service !== 'change-password') {
 			return $previousResponse;

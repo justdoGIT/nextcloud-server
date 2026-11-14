@@ -10,10 +10,10 @@ declare(strict_types=1);
 namespace OCA\DAV\CalDAV;
 
 use DateTime;
+use DateTimeImmutable;
 use DateTimeInterface;
 use DateTimeZone;
 use InvalidArgumentException;
-
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
 use Sabre\VObject\Reader;
@@ -45,8 +45,8 @@ class EventReader {
 		7 => 'July', 8 => 'August', 9 => 'September', 10 => 'October', 11 => 'November', 12 => 'December'
 	];
 	protected array $relativePositionNamesMap = [
-		1 => 'First', 2 => 'Second', 3 => 'Third', 4 => 'Fourth', 5 => 'Fifty',
-		-1 => 'Last', -2 => 'Second Last', -3 => 'Third Last', -4 => 'Fourth Last', -5 => 'Fifty Last'
+		1 => 'First', 2 => 'Second', 3 => 'Third', 4 => 'Fourth', 5 => 'Fifth',
+		-1 => 'Last', -2 => 'Second Last', -3 => 'Third Last', -4 => 'Fourth Last', -5 => 'Fifth Last'
 	];
 
 	/**
@@ -71,6 +71,8 @@ class EventReader {
 	 */
 	public function __construct(VCalendar|VEvent|array|string $input, ?string $uid = null, ?DateTimeZone $timeZone = null) {
 
+		$timeZoneFactory = new TimeZoneFactory();
+
 		// evaluate if the input is a string and convert it to and vobject if required
 		if (is_string($input)) {
 			$input = Reader::read($input);
@@ -93,7 +95,7 @@ class EventReader {
 			}
 			// extract calendar timezone
 			if (isset($input->VTIMEZONE) && isset($input->VTIMEZONE->TZID)) {
-				$calendarTimeZone = new DateTimeZone($input->VTIMEZONE->TZID->getValue());
+				$calendarTimeZone = $timeZoneFactory->fromName($input->VTIMEZONE->TZID->getValue());
 			}
 		}
 		// evaluate if input is a collection of event vobjects
@@ -109,7 +111,7 @@ class EventReader {
 				unset($events[$key]);
 			}
 		}
-		
+
 		// No base event was found. CalDAV does allow cases where only
 		// overridden instances are stored.
 		//
@@ -120,15 +122,15 @@ class EventReader {
 			$this->baseEvent = array_shift($events);
 		}
 
-		// determain the event starting time zone
+		// determine the event starting time zone
 		// we require this to align all other dates times
-		// evaluate if timezone paramater was used (treat this as a override)
+		// evaluate if timezone parameter was used (treat this as a override)
 		if ($timeZone !== null) {
 			$this->baseEventStartTimeZone = $timeZone;
 		}
 		// evaluate if event start date has a timezone parameter
 		elseif (isset($this->baseEvent->DTSTART->parameters['TZID'])) {
-			$this->baseEventStartTimeZone = new DateTimeZone($this->baseEvent->DTSTART->parameters['TZID']->getValue());
+			$this->baseEventStartTimeZone = $timeZoneFactory->fromName($this->baseEvent->DTSTART->parameters['TZID']->getValue()) ?? new DateTimeZone('UTC');
 		}
 		// evaluate if event parent calendar has a time zone
 		elseif (isset($calendarTimeZone)) {
@@ -139,15 +141,15 @@ class EventReader {
 			$this->baseEventStartTimeZone = new DateTimeZone('UTC');
 		}
 
-		// determain the event end time zone
+		// determine the event end time zone
 		// we require this to align all other dates and times
-		// evaluate if timezone paramater was used (treat this as a override)
+		// evaluate if timezone parameter was used (treat this as a override)
 		if ($timeZone !== null) {
 			$this->baseEventEndTimeZone = $timeZone;
 		}
 		// evaluate if event end date has a timezone parameter
 		elseif (isset($this->baseEvent->DTEND->parameters['TZID'])) {
-			$this->baseEventEndTimeZone = new DateTimeZone($this->baseEvent->DTEND->parameters['TZID']->getValue());
+			$this->baseEventEndTimeZone = $timeZoneFactory->fromName($this->baseEvent->DTEND->parameters['TZID']->getValue()) ?? new DateTimeZone('UTC');
 		}
 		// evaluate if event parent calendar has a time zone
 		elseif (isset($calendarTimeZone)) {
@@ -166,22 +168,24 @@ class EventReader {
 		if (isset($this->baseEvent->DTEND)) {
 			$this->baseEventEndDate = $this->baseEvent->DTEND->getDateTime($this->baseEventEndTimeZone);
 			$this->baseEventEndDateFloating = $this->baseEvent->DTEND->isFloating();
-			$this->baseEventDuration =
-				$this->baseEvent->DTEND->getDateTime($this->baseEventEndTimeZone)->getTimeStamp() -
-				$this->baseEventStartDate->getTimeStamp();
+			$this->baseEventDuration
+				= $this->baseEvent->DTEND->getDateTime($this->baseEventEndTimeZone)->getTimeStamp()
+				- $this->baseEventStartDate->getTimeStamp();
 		}
 		// evaluate if duration exists
 		// extract duration and calculate end date
 		elseif (isset($this->baseEvent->DURATION)) {
-			$this->baseEventDuration = $this->baseEvent->DURATION->getDateInterval();
-			$this->baseEventEndDate = ((clone $this->baseEventStartDate)->add($this->baseEventDuration));
+			$this->baseEventEndDate = DateTimeImmutable::createFromInterface($this->baseEventStartDate)
+				->add($this->baseEvent->DURATION->getDateInterval());
+			$this->baseEventDuration = $this->baseEventEndDate->getTimestamp() - $this->baseEventStartDate->getTimestamp();
 		}
 		// evaluate if start date is floating
 		// set duration to 24 hours and calculate the end date
 		// according to the rfc any event without a end date or duration is a complete day
-		elseif ($this->baseEventStartDateFloating == true) {
+		elseif ($this->baseEventStartDateFloating === true) {
 			$this->baseEventDuration = 86400;
-			$this->baseEventEndDate = ((clone $this->baseEventStartDate)->add($this->baseEventDuration));
+			$this->baseEventEndDate = DateTimeImmutable::createFromInterface($this->baseEventStartDate)
+				->setTimestamp($this->baseEventStartDate->getTimestamp() + $this->baseEventDuration);
 		}
 		// otherwise, set duration to zero this should never happen
 		else {
@@ -197,8 +201,12 @@ class EventReader {
 		}
 		// evaluate if RDATE exist and construct iterator
 		if (isset($this->baseEvent->RDATE)) {
+			$dates = [];
+			foreach ($this->baseEvent->RDATE as $entry) {
+				$dates[] = $entry->getValue();
+			}
 			$this->rdateIterator = new EventReaderRDate(
-				$this->baseEvent->RDATE->getValue(),
+				implode(',', $dates),
 				$this->baseEventStartDate
 			);
 		}
@@ -211,8 +219,12 @@ class EventReader {
 		}
 		// evaluate if EXDATE exist and construct iterator
 		if (isset($this->baseEvent->EXDATE)) {
+			$dates = [];
+			foreach ($this->baseEvent->EXDATE as $entry) {
+				$dates[] = $entry->getValue();
+			}
 			$this->edateIterator = new EventReaderRDate(
-				$this->baseEvent->EXDATE->getValue(),
+				implode(',', $dates),
 				$this->baseEventStartDate
 			);
 		}
@@ -220,7 +232,7 @@ class EventReader {
 		foreach ($events as $vevent) {
 			$this->recurrenceModified[$vevent->{'RECURRENCE-ID'}->getDateTime($this->baseEventStartTimeZone)->getTimeStamp()] = $vevent;
 		}
-		
+
 		$this->recurrenceCurrentDate = clone $this->baseEventStartDate;
 	}
 
@@ -349,8 +361,8 @@ class EventReader {
 	public function recurringConcludes(): bool {
 
 		// retrieve rrule conclusions
-		if ($this->rruleIterator?->concludesOn() !== null ||
-			$this->rruleIterator?->concludesAfter() !== null) {
+		if ($this->rruleIterator?->concludesOn() !== null
+			|| $this->rruleIterator?->concludesAfter() !== null) {
 			return true;
 		}
 		// retrieve rdate conclusions
@@ -359,7 +371,6 @@ class EventReader {
 		}
 
 		return false;
-
 	}
 
 	/**
@@ -375,7 +386,7 @@ class EventReader {
 	 * @return int|null
 	 */
 	public function recurringConcludesAfter(): ?int {
-		
+
 		// construct count place holder
 		$count = 0;
 		// retrieve and add RRULE iterations count
@@ -384,7 +395,6 @@ class EventReader {
 		$count += (int)$this->rdateIterator?->concludesAfter();
 		// return count
 		return !empty($count) ? $count : null;
-
 	}
 
 	/**
@@ -425,7 +435,6 @@ class EventReader {
 		}
 
 		return null;
-
 	}
 
 	/**
@@ -681,7 +690,7 @@ class EventReader {
 		$rdateDate = null;
 		$eruleDate = null;
 		$edateDate = null;
-		// evaludate if rrule is set and advance one interation past current date
+		// evaluate if rrule is set and advance one iteration past current date
 		if ($this->rruleIterator !== null) {
 			// forward rrule to the next future date
 			while ($this->rruleIterator->valid() && $this->rruleIterator->current() <= $this->recurrenceCurrentDate) {
@@ -689,7 +698,7 @@ class EventReader {
 			}
 			$rruleDate = $this->rruleIterator->current();
 		}
-		// evaludate if rdate is set and advance one interation past current date
+		// evaluate if rdate is set and advance one iteration past current date
 		if ($this->rdateIterator !== null) {
 			// forward rdate to the next future date
 			while ($this->rdateIterator->valid() && $this->rdateIterator->current() <= $this->recurrenceCurrentDate) {
@@ -705,7 +714,7 @@ class EventReader {
 			$nextOccurrenceDate = $rdateDate;
 		}
 
-		// evaludate if exrule is set and advance one interation past current date
+		// evaluate if exrule is set and advance one iteration past current date
 		if ($this->eruleIterator !== null) {
 			// forward exrule to the next future date
 			while ($this->eruleIterator->valid() && $this->eruleIterator->current() <= $this->recurrenceCurrentDate) {
@@ -713,7 +722,7 @@ class EventReader {
 			}
 			$eruleDate = $this->eruleIterator->current();
 		}
-		// evaludate if exdate is set and advance one interation past current date
+		// evaluate if exdate is set and advance one iteration past current date
 		if ($this->edateIterator !== null) {
 			// forward exdate to the next future date
 			while ($this->edateIterator->valid() && $this->edateIterator->current() <= $this->recurrenceCurrentDate) {
@@ -721,7 +730,7 @@ class EventReader {
 			}
 			$edateDate = $this->edateIterator->current();
 		}
-		// evaludate if exrule and exdate are set and set nextExDate to the first next date
+		// evaluate if exrule and exdate are set and set nextExDate to the first next date
 		if ($eruleDate !== null && $edateDate !== null) {
 			$nextExceptionDate = ($eruleDate <= $edateDate) ? $eruleDate : $edateDate;
 		} elseif ($eruleDate !== null) {
@@ -730,6 +739,9 @@ class EventReader {
 			$nextExceptionDate = $edateDate;
 		}
 		// if the next date is part of exrule or exdate find another date
+		// loose comparison needed: DateTime value equality, not instance identity
+		// (type comes from an untyped Iterator::current(), so psalm can't verify it statically)
+		/** @psalm-suppress UnrecognizedExpression */
 		if ($nextOccurrenceDate !== null && $nextExceptionDate !== null && $nextOccurrenceDate == $nextExceptionDate) {
 			$this->recurrenceCurrentDate = $nextOccurrenceDate;
 			$this->recurrenceAdvance();

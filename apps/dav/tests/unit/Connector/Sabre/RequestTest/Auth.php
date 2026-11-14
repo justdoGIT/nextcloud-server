@@ -1,36 +1,32 @@
 <?php
 
+declare(strict_types=1);
 /**
  * SPDX-FileCopyrightText: 2016-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\Tests\unit\Connector\Sabre\RequestTest;
 
+use OCP\Files\IRootFolder;
+use OCP\IUserSession;
+use OCP\Server;
 use Sabre\DAV\Auth\Backend\BackendInterface;
 use Sabre\HTTP\RequestInterface;
 use Sabre\HTTP\ResponseInterface;
 
 class Auth implements BackendInterface {
 	/**
-	 * @var string
-	 */
-	private $user;
-
-	/**
-	 * @var string
-	 */
-	private $password;
-
-	/**
 	 * Auth constructor.
 	 *
 	 * @param string $user
 	 * @param string $password
 	 */
-	public function __construct($user, $password) {
-		$this->user = $user;
-		$this->password = $password;
+	public function __construct(
+		private $user,
+		private $password,
+	) {
 	}
 
 	/**
@@ -62,14 +58,14 @@ class Auth implements BackendInterface {
 	 * @return array
 	 */
 	public function check(RequestInterface $request, ResponseInterface $response) {
-		$userSession = \OC::$server->getUserSession();
+		$userSession = Server::get(IUserSession::class);
 		$result = $userSession->login($this->user, $this->password);
 		if ($result) {
 			//we need to pass the user name, which may differ from login name
 			$user = $userSession->getUser()->getUID();
 			\OC_Util::setupFS($user);
 			//trigger creation of user home and /files folder
-			\OC::$server->getUserFolder($user);
+			Server::get(IRootFolder::class)->getUserFolder($user);
 			return [true, "principals/$user"];
 		}
 		return [false, 'login failed'];

@@ -1,13 +1,18 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2021 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCP\Group\Backend;
+
+use OCP\AppFramework\Attribute\Implementable;
 
 /**
  * @since 22.0.0
  */
+#[Implementable(since: '22.0.0')]
 interface INamedBackend {
 	/**
 	 * Backend name to be shown in group management

@@ -5,12 +5,15 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\Connector\Sabre;
 
 use OC\Files\View;
 use OCA\Circles\Api\v1\Circles;
 use OCP\App\IAppManager;
+use OCP\AppFramework\Http;
 use OCP\Files\Folder;
+use OCP\Files\IUserFolder;
 use OCP\Files\Node as INode;
 use OCP\IGroupManager;
 use OCP\ITagManager;
@@ -41,83 +44,20 @@ class FilesReportPlugin extends ServerPlugin {
 	 */
 	private $server;
 
-	/**
-	 * @var Tree
-	 */
-	private $tree;
-
-	/**
-	 * @var View
-	 */
-	private $fileView;
-
-	/**
-	 * @var ISystemTagManager
-	 */
-	private $tagManager;
-
-	/**
-	 * @var ISystemTagObjectMapper
-	 */
-	private $tagMapper;
-
-	/**
-	 * Manager for private tags
-	 *
-	 * @var ITagManager
-	 */
-	private $fileTagger;
-
-	/**
-	 * @var IUserSession
-	 */
-	private $userSession;
-
-	/**
-	 * @var IGroupManager
-	 */
-	private $groupManager;
-
-	/**
-	 * @var Folder
-	 */
-	private $userFolder;
-
-	/**
-	 * @var IAppManager
-	 */
-	private $appManager;
-
-	/**
-	 * @param Tree $tree
-	 * @param View $view
-	 * @param ISystemTagManager $tagManager
-	 * @param ISystemTagObjectMapper $tagMapper
-	 * @param ITagManager $fileTagger manager for private tags
-	 * @param IUserSession $userSession
-	 * @param IGroupManager $groupManager
-	 * @param Folder $userFolder
-	 * @param IAppManager $appManager
-	 */
-	public function __construct(Tree $tree,
-		View $view,
-		ISystemTagManager $tagManager,
-		ISystemTagObjectMapper $tagMapper,
-		ITagManager $fileTagger,
-		IUserSession $userSession,
-		IGroupManager $groupManager,
-		Folder $userFolder,
-		IAppManager $appManager,
+	public function __construct(
+		private Tree $tree,
+		private View $fileView,
+		private ISystemTagManager $tagManager,
+		private ISystemTagObjectMapper $tagMapper,
+		/**
+		 * Manager for private tags
+		 */
+		private ITagManager $fileTagger,
+		private IUserSession $userSession,
+		private IGroupManager $groupManager,
+		private IUserFolder $userFolder,
+		private IAppManager $appManager,
 	) {
-		$this->tree = $tree;
-		$this->fileView = $view;
-		$this->tagManager = $tagManager;
-		$this->tagMapper = $tagMapper;
-		$this->fileTagger = $fileTagger;
-		$this->userSession = $userSession;
-		$this->groupManager = $groupManager;
-		$this->userFolder = $userFolder;
-		$this->appManager = $appManager;
 	}
 
 	/**
@@ -131,6 +71,7 @@ class FilesReportPlugin extends ServerPlugin {
 	 * @param \Sabre\DAV\Server $server
 	 * @return void
 	 */
+	#[\Override]
 	public function initialize(\Sabre\DAV\Server $server) {
 		$server->xml->namespaceMap[self::NS_OWNCLOUD] = 'oc';
 
@@ -146,6 +87,7 @@ class FilesReportPlugin extends ServerPlugin {
 	 * @param string $uri
 	 * @return array
 	 */
+	#[\Override]
 	public function getSupportedReportSet($uri) {
 		return [self::REPORT_NAME];
 	}
@@ -207,7 +149,7 @@ class FilesReportPlugin extends ServerPlugin {
 			// to user backends. I.e. the final result may return more results than requested.
 			$resultNodes = $this->processFilterRulesForFileNodes($filterRules, $limit ?? null, $offset ?? null);
 		} catch (TagNotFoundException $e) {
-			throw new PreconditionFailed('Cannot filter by non-existing tag', 0, $e);
+			throw new PreconditionFailed('Cannot filter by non-existing tag');
 		}
 
 		$results = [];
@@ -235,7 +177,7 @@ class FilesReportPlugin extends ServerPlugin {
 			new MultiStatus($responses)
 		);
 
-		$this->server->httpResponse->setStatus(207);
+		$this->server->httpResponse->setStatus(Http::STATUS_MULTI_STATUS);
 		$this->server->httpResponse->setHeader('Content-Type', 'application/xml; charset=utf-8');
 		$this->server->httpResponse->setBody($xml);
 
@@ -359,7 +301,6 @@ class FilesReportPlugin extends ServerPlugin {
 		return Circles::getFilesForCircles($circlesIds);
 	}
 
-
 	/**
 	 * Prepare propfind response for the given nodes
 	 *
@@ -380,7 +321,7 @@ class FilesReportPlugin extends ServerPlugin {
 			$result['href'] = $propFind->getPath();
 
 			$resourceType = $this->server->getResourceTypeForNode($node);
-			if (in_array('{DAV:}collection', $resourceType) || in_array('{DAV:}principal', $resourceType)) {
+			if (in_array('{DAV:}collection', $resourceType, true) || in_array('{DAV:}principal', $resourceType, true)) {
 				$result['href'] .= '/';
 			}
 

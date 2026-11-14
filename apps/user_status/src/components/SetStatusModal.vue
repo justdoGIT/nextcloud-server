@@ -4,20 +4,24 @@
 -->
 
 <template>
-	<NcModal size="normal"
-		:name="$t('user_status', 'Set status')"
-		aria-labelledby="user_status-set-dialog"
-		:set-return-focus="setReturnFocus"
+	<NcModal
+		id="user_status-dialog"
+		size="normal"
+		labelId="user_status-set-dialog"
+		dark
+		:setReturnFocus="setReturnFocus"
 		@close="closeModal">
 		<div class="set-status-modal">
 			<!-- Status selector -->
 			<h2 id="user_status-set-dialog" class="set-status-modal__header">
-				{{ $t('user_status', 'Online status') }}
+				{{ t('user_status', 'Online status') }}
 			</h2>
-			<div class="set-status-modal__online-status"
+			<div
+				class="set-status-modal__online-status"
 				role="radiogroup"
-				:aria-label="$t('user_status', 'Online status')">
-				<OnlineStatusSelect v-for="status in statuses"
+				:aria-label="t('user_status', 'Online status')">
+				<OnlineStatusSelect
+					v-for="status in statuses"
 					:key="status.type"
 					v-bind="status"
 					:checked="status.type === statusType"
@@ -27,47 +31,54 @@
 			<!-- Status message form -->
 			<form @submit.prevent="saveStatus" @reset="clearStatus">
 				<h3 class="set-status-modal__header">
-					{{ $t('user_status', 'Status message') }}
+					{{ t('user_status', 'Status message') }}
 				</h3>
 				<div class="set-status-modal__custom-input">
-					<CustomMessageInput ref="customMessageInput"
+					<CustomMessageInput
+						ref="customMessageInput"
 						:icon="icon"
 						:message="editedMessage"
 						@change="setMessage"
-						@select-icon="setIcon" />
-					<NcButton v-if="messageId === 'vacationing'"
+						@selectIcon="setIcon" />
+					<NcButton
+						v-if="messageId === 'vacationing'"
 						:href="absencePageUrl"
 						target="_blank"
-						type="secondary"
-						:aria-label="$t('user_status', 'Set absence period')">
-						{{ $t('user_status', 'Set absence period and replacement') + ' ↗' }}
+						variant="secondary"
+						:aria-label="t('user_status', 'Set absence period')">
+						{{ t('user_status', 'Set absence period and replacement') + ' ↗' }}
 					</NcButton>
 				</div>
-				<div v-if="hasBackupStatus"
+				<div
+					v-if="hasBackupStatus"
 					class="set-status-modal__automation-hint">
-					{{ $t('user_status', 'Your status was set automatically') }}
+					{{ t('user_status', 'Your status was set automatically') }}
 				</div>
-				<PreviousStatus v-if="hasBackupStatus"
+				<PreviousStatus
+					v-if="hasBackupStatus"
 					:icon="backupIcon"
 					:message="backupMessage"
 					@select="revertBackupFromServer" />
-				<PredefinedStatusesList @select-status="selectPredefinedMessage" />
-				<ClearAtSelect :clear-at="clearAt"
-					@select-clear-at="setClearAt" />
+				<PredefinedStatusesList @selectStatus="selectPredefinedMessage" />
+				<ClearAtSelect
+					:clearAt="clearAt"
+					@selectClearAt="setClearAt" />
 				<div class="status-buttons">
-					<NcButton :wide="true"
-						type="tertiary"
-						native-type="reset"
-						:aria-label="$t('user_status', 'Clear status message')"
+					<NcButton
+						:wide="true"
+						variant="tertiary"
+						type="reset"
+						:aria-label="t('user_status', 'Clear status message')"
 						:disabled="isSavingStatus">
-						{{ $t('user_status', 'Clear status message') }}
+						{{ t('user_status', 'Clear status message') }}
 					</NcButton>
-					<NcButton :wide="true"
-						type="primary"
-						native-type="submit"
-						:aria-label="$t('user_status', 'Set status message')"
+					<NcButton
+						:wide="true"
+						variant="primary"
+						type="submit"
+						:aria-label="t('user_status', 'Set status message')"
 						:disabled="isSavingStatus">
-						{{ $t('user_status', 'Set status message') }}
+						{{ t('user_status', 'Set status message') }}
 					</NcButton>
 				</div>
 			</form>
@@ -77,16 +88,21 @@
 
 <script>
 import { showError } from '@nextcloud/dialogs'
+import { t } from '@nextcloud/l10n'
 import { generateUrl } from '@nextcloud/router'
-import NcModal from '@nextcloud/vue/dist/Components/NcModal.js'
-import NcButton from '@nextcloud/vue/dist/Components/NcButton.js'
-import { getAllStatusOptions } from '../services/statusOptionsService.js'
-import OnlineStatusMixin from '../mixins/OnlineStatusMixin.js'
+import { mapState, mapStores } from 'pinia'
+import NcButton from '@nextcloud/vue/components/NcButton'
+import NcModal from '@nextcloud/vue/components/NcModal'
+import ClearAtSelect from './ClearAtSelect.vue'
+import CustomMessageInput from './CustomMessageInput.vue'
+import OnlineStatusSelect from './OnlineStatusSelect.vue'
 import PredefinedStatusesList from './PredefinedStatusesList.vue'
 import PreviousStatus from './PreviousStatus.vue'
-import CustomMessageInput from './CustomMessageInput.vue'
-import ClearAtSelect from './ClearAtSelect.vue'
-import OnlineStatusSelect from './OnlineStatusSelect.vue'
+import { logger } from '../logger.ts'
+import OnlineStatusMixin from '../mixins/OnlineStatusMixin.js'
+import { getAllStatusOptions } from '../services/statusOptionsService.js'
+import { useUserBackupStatusStore } from '../store/userBackupStatus.ts'
+import { useUserStatusStore } from '../store/userStatus.ts'
 
 export default {
 	name: 'SetStatusModal',
@@ -100,6 +116,7 @@ export default {
 		PreviousStatus,
 		NcButton,
 	},
+
 	mixins: [OnlineStatusMixin],
 
 	props: {
@@ -114,6 +131,8 @@ export default {
 		},
 	},
 
+	emits: ['close'],
+
 	data() {
 		return {
 			clearAt: null,
@@ -125,23 +144,23 @@ export default {
 	},
 
 	computed: {
-		messageId() {
-			return this.$store.state.userStatus.messageId
-		},
-		icon() {
-			return this.$store.state.userStatus.icon
-		},
+		...mapStores(useUserBackupStatusStore),
+		...mapState(useUserStatusStore, ['messageId', 'icon']),
+
 		message() {
-			return this.$store.state.userStatus.message || ''
+			return this.userStatusStore.message || ''
 		},
+
 		hasBackupStatus() {
 			return this.messageId && (this.backupIcon || this.backupMessage)
 		},
+
 		backupIcon() {
-			return this.$store.state.userBackupStatus.icon || ''
+			return this.userBackupStatusStore.icon || ''
 		},
+
 		backupMessage() {
-			return this.$store.state.userBackupStatus.message || ''
+			return this.userBackupStatusStore.message || ''
 		},
 
 		absencePageUrl() {
@@ -150,21 +169,21 @@ export default {
 
 		resetButtonText() {
 			if (this.backupIcon && this.backupMessage) {
-				return this.$t('user_status', 'Reset status to "{icon} {message}"', {
+				return t('user_status', 'Reset status to "{icon} {message}"', {
 					icon: this.backupIcon,
 					message: this.backupMessage,
 				})
 			} else if (this.backupMessage) {
-				return this.$t('user_status', 'Reset status to "{message}"', {
+				return t('user_status', 'Reset status to "{message}"', {
 					message: this.backupMessage,
 				})
 			} else if (this.backupIcon) {
-				return this.$t('user_status', 'Reset status to "{icon}"', {
+				return t('user_status', 'Reset status to "{icon}"', {
 					icon: this.backupIcon,
 				})
 			}
 
-			return this.$t('user_status', 'Reset status')
+			return t('user_status', 'Reset status')
 		},
 
 		setReturnFocus() {
@@ -188,23 +207,27 @@ export default {
 	 * Loads the current status when a user opens dialog
 	 */
 	mounted() {
-		this.$store.dispatch('fetchBackupFromServer')
+		this.userBackupStatusStore.fetchBackupFromServer()
 
-		this.predefinedMessageId = this.$store.state.userStatus.messageId
-		if (this.$store.state.userStatus.clearAt !== null) {
+		this.predefinedMessageId = this.userStatusStore.messageId
+		if (this.userStatusStore.clearAt !== null) {
 			this.clearAt = {
 				type: '_time',
-				time: this.$store.state.userStatus.clearAt,
+				time: this.userStatusStore.clearAt,
 			}
 		}
 	},
+
 	methods: {
+		t,
+
 		/**
 		 * Closes the Set Status modal
 		 */
 		closeModal() {
 			this.$emit('close')
 		},
+
 		/**
 		 * Sets a new icon
 		 *
@@ -212,15 +235,12 @@ export default {
 		 */
 		setIcon(icon) {
 			this.predefinedMessageId = null
-			this.$store.dispatch('setCustomMessage', {
-				message: this.message,
-				icon,
-				clearAt: this.clearAt,
-			})
+			this.userStatusStore.setCustomMessage(this.message, icon, this.clearAt)
 			this.$nextTick(() => {
 				this.$refs.customMessageInput.focus()
 			})
 		},
+
 		/**
 		 * Sets a new message
 		 *
@@ -230,6 +250,7 @@ export default {
 			this.predefinedMessageId = null
 			this.editedMessage = message
 		},
+
 		/**
 		 * Sets a new clearAt value
 		 *
@@ -238,6 +259,7 @@ export default {
 		setClearAt(clearAt) {
 			this.clearAt = clearAt
 		},
+
 		/**
 		 * Sets new icon/message/clearAt based on a predefined message
 		 *
@@ -246,11 +268,9 @@ export default {
 		selectPredefinedMessage(status) {
 			this.predefinedMessageId = status.id
 			this.clearAt = status.clearAt
-			this.$store.dispatch('setPredefinedMessage', {
-				messageId: status.id,
-				clearAt: status.clearAt,
-			})
+			this.userStatusStore.setPredefinedMessage(status.id, status.clearAt)
 		},
+
 		/**
 		 * Saves the status and closes the
 		 *
@@ -265,20 +285,13 @@ export default {
 				this.isSavingStatus = true
 
 				if (this.predefinedMessageId === null) {
-					await this.$store.dispatch('setCustomMessage', {
-						message: this.editedMessage,
-						icon: this.icon,
-						clearAt: this.clearAt,
-					})
+					await this.userStatusStore.setCustomMessage(this.editedMessage, this.icon, this.clearAt)
 				} else {
-					this.$store.dispatch('setPredefinedMessage', {
-						messageId: this.predefinedMessageId,
-						clearAt: this.clearAt,
-					})
+					await this.userStatusStore.setPredefinedMessage(this.predefinedMessageId, this.clearAt)
 				}
 			} catch (err) {
-				showError(this.$t('user_status', 'There was an error saving the status'))
-				console.debug(err)
+				showError(t('user_status', 'There was an error saving the status'))
+				logger.debug(err)
 				this.isSavingStatus = false
 				return
 			}
@@ -286,6 +299,7 @@ export default {
 			this.isSavingStatus = false
 			this.closeModal()
 		},
+
 		/**
 		 *
 		 * @return {Promise<void>}
@@ -294,10 +308,10 @@ export default {
 			try {
 				this.isSavingStatus = true
 
-				await this.$store.dispatch('clearMessage')
+				await this.userStatusStore.clearMessage()
 			} catch (err) {
-				showError(this.$t('user_status', 'There was an error clearing the status'))
-				console.debug(err)
+				showError(t('user_status', 'There was an error clearing the status'))
+				logger.debug(err)
 				this.isSavingStatus = false
 				return
 			}
@@ -306,6 +320,7 @@ export default {
 			this.predefinedMessageId = null
 			this.closeModal()
 		},
+
 		/**
 		 *
 		 * @return {Promise<void>}
@@ -314,18 +329,16 @@ export default {
 			try {
 				this.isSavingStatus = true
 
-				await this.$store.dispatch('revertBackupFromServer', {
-					messageId: this.messageId,
-				})
+				await this.userBackupStatusStore.revertBackupFromServer(this.messageId)
 			} catch (err) {
-				showError(this.$t('user_status', 'There was an error reverting the status'))
-				console.debug(err)
+				showError(t('user_status', 'There was an error reverting the status'))
+				logger.debug(err)
 				this.isSavingStatus = false
 				return
 			}
 
 			this.isSavingStatus = false
-			this.predefinedMessageId = this.$store.state.userStatus?.messageId
+			this.predefinedMessageId = this.userStatusStore.messageId
 		},
 	},
 }
@@ -336,6 +349,10 @@ export default {
 .set-status-modal {
 	padding: 8px 20px 20px 20px;
 
+	&, & * {
+		box-sizing: border-box;
+	}
+
 	&__header {
 		font-size: 21px;
 		text-align: center;
@@ -343,12 +360,14 @@ export default {
 		min-height: var(--default-clickable-area);
 		line-height: var(--default-clickable-area);
 		overflow-wrap: break-word;
-		margin-block: 0 12px;
+		margin-block: 0 calc(2 * var(--default-grid-baseline));
 	}
 
 	&__online-status {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
+		display: flex;
+		flex-direction: column;
+		gap: calc(2 * var(--default-grid-baseline));
+		margin-block: 0 calc(2 * var(--default-grid-baseline));
 	}
 
 	&__custom-input {
@@ -357,13 +376,14 @@ export default {
 		align-items: center;
 		gap: var(--default-grid-baseline);
 		width: 100%;
-		margin-bottom: 10px;
+		padding-inline-start: var(--default-grid-baseline);
+		margin-block: 0 calc(2 * var(--default-grid-baseline));
 	}
 
 	&__automation-hint {
 		display: flex;
 		width: 100%;
-		margin-bottom: 10px;
+		margin-block: 0 calc(2 * var(--default-grid-baseline));
 		color: var(--color-text-maxcontrast);
 	}
 

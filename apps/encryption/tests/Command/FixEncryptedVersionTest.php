@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 /**
  * SPDX-FileCopyrightText: 2021-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2019 ownCloud GmbH
@@ -10,7 +12,16 @@ namespace OCA\Encryption\Tests\Command;
 
 use OC\Files\View;
 use OCA\Encryption\Command\FixEncryptedVersion;
+use OCA\Encryption\KeyManager;
 use OCA\Encryption\Util;
+use OCP\Encryption\IManager;
+use OCP\Files\ISetupManager;
+use OCP\IAppConfig;
+use OCP\IConfig;
+use OCP\ITempManager;
+use OCP\IUserManager;
+use OCP\Server;
+use PHPUnit\Framework\MockObject\MockObject;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Tester\CommandTester;
 use Test\TestCase;
@@ -21,29 +32,28 @@ use Test\Traits\UserTrait;
 /**
  * Class FixEncryptedVersionTest
  *
- * @group DB
  * @package OCA\Encryption\Tests\Command
  */
+#[\PHPUnit\Framework\Attributes\Group(name: 'DB')]
 class FixEncryptedVersionTest extends TestCase {
 	use MountProviderTrait;
 	use EncryptionTrait;
 	use UserTrait;
 
-	private $userId;
+	private string $userId;
 
-	/** @var FixEncryptedVersion */
-	private $fixEncryptedVersion;
+	private FixEncryptedVersion $fixEncryptedVersion;
 
-	/** @var CommandTester */
-	private $commandTester;
+	private CommandTester $commandTester;
 
-	/** @var Util|\PHPUnit\Framework\MockObject\MockObject */
-	protected $util;
+	protected Util&MockObject $util;
 
 	public function setUp(): void {
 		parent::setUp();
+		Server::get(KeyManager::class)->validateMasterKey();
+		Server::get(KeyManager::class)->validateShareKey();
 
-		\OC::$server->getConfig()->setAppValue('encryption', 'useMasterKey', '1');
+		Server::get(IAppConfig::class)->setValueBool('encryption', 'useMasterKey', true);
 
 		$this->util = $this->getMockBuilder(Util::class)
 			->disableOriginalConstructor()->getMock();
@@ -51,24 +61,25 @@ class FixEncryptedVersionTest extends TestCase {
 		$this->userId = $this->getUniqueId('user_');
 
 		$this->createUser($this->userId, 'foo12345678');
-		$tmpFolder = \OC::$server->getTempManager()->getTemporaryFolder();
+		$tmpFolder = Server::get(ITempManager::class)->getTemporaryFolder();
 		$this->registerMount($this->userId, '\OC\Files\Storage\Local', '/' . $this->userId, ['datadir' => $tmpFolder]);
 		$this->setupForUser($this->userId, 'foo12345678');
 		$this->loginWithEncryption($this->userId);
 
 		$this->fixEncryptedVersion = new FixEncryptedVersion(
-			\OC::$server->getConfig(),
-			\OC::$server->get(LoggerInterface::class),
-			\OC::$server->getRootFolder(),
-			\OC::$server->getUserManager(),
+			Server::get(IConfig::class),
+			Server::get(LoggerInterface::class),
+			Server::get(IUserManager::class),
 			$this->util,
-			new View('/')
+			new View('/'),
+			Server::get(ISetupManager::class),
 		);
 		$this->commandTester = new CommandTester($this->fixEncryptedVersion);
 
-		$this->assertTrue(\OC::$server->getEncryptionManager()->isEnabled());
-		$this->assertTrue(\OC::$server->getEncryptionManager()->isReady());
-		$this->assertTrue(\OC::$server->getEncryptionManager()->isReadyForUser($this->userId));
+		$manager = Server::get(IManager::class);
+		$this->assertTrue($manager->isEnabled());
+		$this->assertTrue($manager->isReady());
+		$this->assertTrue($manager->isReadyForUser($this->userId));
 	}
 
 	/**
@@ -370,7 +381,7 @@ The file \"/$this->userId/files/sub/hello.txt\" is: OK", $output);
 	 * Test commands without master key
 	 */
 	public function testExecuteWithNoMasterKey(): void {
-		\OC::$server->getConfig()->setAppValue('encryption', 'useMasterKey', '0');
+		Server::get(IAppConfig::class)->setValueBool('encryption', 'useMasterKey', false);
 		$this->util->expects($this->once())->method('isMasterKeyEnabled')
 			->willReturn(false);
 

@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2019 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\CalDAV\Reminder;
 
 use DateTime;
@@ -26,31 +27,21 @@ use OCP\Notification\UnknownNotificationException;
  */
 class Notifier implements INotifier {
 
-	/** @var IFactory */
-	private $l10nFactory;
-
-	/** @var IURLGenerator */
-	private $urlGenerator;
-
 	/** @var IL10N */
 	private $l10n;
-
-	/** @var ITimeFactory */
-	private $timeFactory;
 
 	/**
 	 * Notifier constructor.
 	 *
-	 * @param IFactory $factory
+	 * @param IFactory $l10nFactory
 	 * @param IURLGenerator $urlGenerator
 	 * @param ITimeFactory $timeFactory
 	 */
-	public function __construct(IFactory $factory,
-		IURLGenerator $urlGenerator,
-		ITimeFactory $timeFactory) {
-		$this->l10nFactory = $factory;
-		$this->urlGenerator = $urlGenerator;
-		$this->timeFactory = $timeFactory;
+	public function __construct(
+		private IFactory $l10nFactory,
+		private IURLGenerator $urlGenerator,
+		private ITimeFactory $timeFactory,
+	) {
 	}
 
 	/**
@@ -59,6 +50,7 @@ class Notifier implements INotifier {
 	 * @return string
 	 * @since 17.0.0
 	 */
+	#[\Override]
 	public function getID():string {
 		return Application::APP_ID;
 	}
@@ -69,6 +61,7 @@ class Notifier implements INotifier {
 	 * @return string
 	 * @since 17.0.0
 	 */
+	#[\Override]
 	public function getName():string {
 		return $this->l10nFactory->get('dav')->t('Calendar');
 	}
@@ -81,6 +74,7 @@ class Notifier implements INotifier {
 	 * @return INotification
 	 * @throws UnknownNotificationException
 	 */
+	#[\Override]
 	public function prepare(INotification $notification,
 		string $languageCode):INotification {
 		if ($notification->getApp() !== Application::APP_ID) {
@@ -94,10 +88,8 @@ class Notifier implements INotifier {
 		switch ($notification->getSubject()) {
 			case 'calendar_reminder':
 				return $this->prepareReminderNotification($notification);
-
 			default:
 				throw new UnknownNotificationException('Unknown subject');
-
 		}
 	}
 

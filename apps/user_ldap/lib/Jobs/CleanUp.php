@@ -5,15 +5,17 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\User_LDAP\Jobs;
 
 use OCA\User_LDAP\Helper;
 use OCA\User_LDAP\Mapping\UserMapping;
 use OCA\User_LDAP\User\DeletedUsersIndex;
-use OCA\User_LDAP\User_LDAP;
 use OCA\User_LDAP\User_Proxy;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\TimedJob;
+use OCP\IConfig;
+use OCP\IDBConnection;
 use OCP\Server;
 
 /**
@@ -30,13 +32,10 @@ class CleanUp extends TimedJob {
 	/** @var int $defaultIntervalMin default interval in minutes */
 	protected $defaultIntervalMin = 60;
 
-	/** @var User_LDAP|User_Proxy $userBackend */
-	protected $userBackend;
-
-	/** @var \OCP\IConfig $ocConfig */
+	/** @var IConfig $ocConfig */
 	protected $ocConfig;
 
-	/** @var \OCP\IDBConnection $db */
+	/** @var IDBConnection $db */
 	protected $db;
 
 	/** @var Helper $ldapHelper */
@@ -45,20 +44,15 @@ class CleanUp extends TimedJob {
 	/** @var UserMapping */
 	protected $mapping;
 
-	/** @var DeletedUsersIndex */
-	protected $dui;
-
 	public function __construct(
 		ITimeFactory $timeFactory,
-		User_Proxy $userBackend,
-		DeletedUsersIndex $dui,
+		protected User_Proxy $userBackend,
+		protected DeletedUsersIndex $dui,
 	) {
 		parent::__construct($timeFactory);
-		$minutes = \OC::$server->getConfig()->getSystemValue(
+		$minutes = Server::get(IConfig::class)->getSystemValue(
 			'ldapUserCleanupInterval', (string)$this->defaultIntervalMin);
 		$this->setInterval((int)$minutes * 60);
-		$this->userBackend = $userBackend;
-		$this->dui = $dui;
 	}
 
 	/**
@@ -74,13 +68,13 @@ class CleanUp extends TimedJob {
 		if (isset($arguments['helper'])) {
 			$this->ldapHelper = $arguments['helper'];
 		} else {
-			$this->ldapHelper = new Helper(\OC::$server->getConfig(), \OC::$server->getDatabaseConnection());
+			$this->ldapHelper = Server::get(Helper::class);
 		}
 
 		if (isset($arguments['ocConfig'])) {
 			$this->ocConfig = $arguments['ocConfig'];
 		} else {
-			$this->ocConfig = \OC::$server->getConfig();
+			$this->ocConfig = Server::get(IConfig::class);
 		}
 
 		if (isset($arguments['userBackend'])) {
@@ -90,7 +84,7 @@ class CleanUp extends TimedJob {
 		if (isset($arguments['db'])) {
 			$this->db = $arguments['db'];
 		} else {
-			$this->db = \OC::$server->getDatabaseConnection();
+			$this->db = Server::get(IDBConnection::class);
 		}
 
 		if (isset($arguments['mapping'])) {
@@ -108,6 +102,7 @@ class CleanUp extends TimedJob {
 	 * makes the background job do its work
 	 * @param array $argument
 	 */
+	#[\Override]
 	public function run($argument): void {
 		$this->setArguments($argument);
 
@@ -186,8 +181,8 @@ class CleanUp extends TimedJob {
 	 * @param bool $reset whether the offset should be set to 0
 	 */
 	public function setOffset(bool $reset = false): void {
-		$newOffset = $reset ? 0 :
-			$this->getOffset() + $this->getChunkSize();
+		$newOffset = $reset ? 0
+			: $this->getOffset() + $this->getChunkSize();
 		$this->ocConfig->setAppValue('user_ldap', 'cleanUpJobOffset', (string)$newOffset);
 	}
 

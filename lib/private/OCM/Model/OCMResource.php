@@ -16,7 +16,7 @@ use OCP\OCM\IOCMResource;
  */
 class OCMResource implements IOCMResource {
 	private string $name = '';
-	/** @var string[] */
+	/** @var list<string> */
 	private array $shareTypes = [];
 	/** @var array<string, string> */
 	private array $protocols = [];
@@ -26,6 +26,7 @@ class OCMResource implements IOCMResource {
 	 *
 	 * @return $this
 	 */
+	#[\Override]
 	public function setName(string $name): static {
 		$this->name = $name;
 
@@ -35,15 +36,17 @@ class OCMResource implements IOCMResource {
 	/**
 	 * @return string
 	 */
+	#[\Override]
 	public function getName(): string {
 		return $this->name;
 	}
 
 	/**
-	 * @param string[] $shareTypes
+	 * @param list<string> $shareTypes
 	 *
 	 * @return $this
 	 */
+	#[\Override]
 	public function setShareTypes(array $shareTypes): static {
 		$this->shareTypes = $shareTypes;
 
@@ -51,8 +54,9 @@ class OCMResource implements IOCMResource {
 	}
 
 	/**
-	 * @return string[]
+	 * @return list<string>
 	 */
+	#[\Override]
 	public function getShareTypes(): array {
 		return $this->shareTypes;
 	}
@@ -62,6 +66,7 @@ class OCMResource implements IOCMResource {
 	 *
 	 * @return $this
 	 */
+	#[\Override]
 	public function setProtocols(array $protocols): static {
 		$this->protocols = $protocols;
 
@@ -71,6 +76,7 @@ class OCMResource implements IOCMResource {
 	/**
 	 * @return array<string, string>
 	 */
+	#[\Override]
 	public function getProtocols(): array {
 		return $this->protocols;
 	}
@@ -83,6 +89,7 @@ class OCMResource implements IOCMResource {
 	 * @return $this
 	 * @see self::jsonSerialize()
 	 */
+	#[\Override]
 	public function import(array $data): static {
 		return $this->setName((string)($data['name'] ?? ''))
 			->setShareTypes($data['shareTypes'] ?? [])
@@ -92,10 +99,11 @@ class OCMResource implements IOCMResource {
 	/**
 	 * @return array{
 	 *     name: string,
-	 *     shareTypes: string[],
+	 *     shareTypes: list<string>,
 	 *     protocols: array<string, string>
 	 * }
 	 */
+	#[\Override]
 	public function jsonSerialize(): array {
 		return [
 			'name' => $this->getName(),

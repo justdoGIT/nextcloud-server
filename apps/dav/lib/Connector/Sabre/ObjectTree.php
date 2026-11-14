@@ -5,10 +5,12 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\Connector\Sabre;
 
 use OC\Files\FileInfo;
 use OC\Files\Storage\FailedStorage;
+use OC\Files\Storage\Storage;
 use OC\Files\View;
 use OCA\DAV\Connector\Sabre\Exception\FileLocked;
 use OCA\DAV\Connector\Sabre\Exception\Forbidden;
@@ -23,12 +25,12 @@ use OCP\Lock\LockedException;
 class ObjectTree extends CachingTree {
 
 	/**
-	 * @var \OC\Files\View
+	 * @var View
 	 */
 	protected $fileView;
 
 	/**
-	 * @var \OCP\Files\Mount\IMountManager
+	 * @var IMountManager
 	 */
 	protected $mountManager;
 
@@ -40,8 +42,8 @@ class ObjectTree extends CachingTree {
 
 	/**
 	 * @param \Sabre\DAV\INode $rootNode
-	 * @param \OC\Files\View $view
-	 * @param \OCP\Files\Mount\IMountManager $mountManager
+	 * @param View $view
+	 * @param IMountManager $mountManager
 	 */
 	public function init(\Sabre\DAV\INode $rootNode, View $view, IMountManager $mountManager) {
 		$this->rootNode = $rootNode;
@@ -59,6 +61,7 @@ class ObjectTree extends CachingTree {
 	 * @throws \Sabre\DAV\Exception\NotFound
 	 * @throws \Sabre\DAV\Exception\ServiceUnavailable
 	 */
+	#[\Override]
 	public function getNodeForPath($path) {
 		if (!$this->fileView) {
 			throw new \Sabre\DAV\Exception\ServiceUnavailable('filesystem not setup');
@@ -91,7 +94,7 @@ class ObjectTree extends CachingTree {
 			$internalPath = $mount->getInternalPath($absPath);
 			if ($storage && $storage->file_exists($internalPath)) {
 				/**
-				 * @var \OC\Files\Storage\Storage $storage
+				 * @var Storage $storage
 				 */
 				// get data directly
 				$data = $storage->getMetaData($internalPath);
@@ -150,11 +153,11 @@ class ObjectTree extends CachingTree {
 	 * @throws \Sabre\DAV\Exception\ServiceUnavailable
 	 * @return void
 	 */
+	#[\Override]
 	public function copy($sourcePath, $destinationPath) {
 		if (!$this->fileView) {
 			throw new \Sabre\DAV\Exception\ServiceUnavailable('filesystem not setup');
 		}
-
 
 		$info = $this->fileView->getFileInfo(dirname($destinationPath));
 		if ($this->fileView->file_exists($destinationPath)) {

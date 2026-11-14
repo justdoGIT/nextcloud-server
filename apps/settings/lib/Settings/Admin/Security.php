@@ -1,8 +1,10 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Settings\Settings\Admin;
 
 use OC\Authentication\TwoFactorAuth\MandatoryTwoFactor;
@@ -14,27 +16,19 @@ use OCP\IUserManager;
 use OCP\Settings\ISettings;
 
 class Security implements ISettings {
-	private IManager $manager;
-	private IUserManager $userManager;
-	private MandatoryTwoFactor $mandatoryTwoFactor;
-	private IInitialState $initialState;
-	private IURLGenerator $urlGenerator;
-
-	public function __construct(IManager $manager,
-		IUserManager $userManager,
-		MandatoryTwoFactor $mandatoryTwoFactor,
-		IInitialState $initialState,
-		IURLGenerator $urlGenerator) {
-		$this->manager = $manager;
-		$this->userManager = $userManager;
-		$this->mandatoryTwoFactor = $mandatoryTwoFactor;
-		$this->initialState = $initialState;
-		$this->urlGenerator = $urlGenerator;
+	public function __construct(
+		private IManager $manager,
+		private IUserManager $userManager,
+		private MandatoryTwoFactor $mandatoryTwoFactor,
+		private IInitialState $initialState,
+		private IURLGenerator $urlGenerator,
+	) {
 	}
 
 	/**
 	 * @return TemplateResponse
 	 */
+	#[\Override]
 	public function getForm(): TemplateResponse {
 		$encryptionModules = $this->manager->getEncryptionModules();
 		$defaultEncryptionModuleId = $this->manager->getDefaultEncryptionModuleId();
@@ -61,6 +55,7 @@ class Security implements ISettings {
 	/**
 	 * @return string the section ID, e.g. 'sharing'
 	 */
+	#[\Override]
 	public function getSection(): string {
 		return 'security';
 	}
@@ -72,6 +67,7 @@ class Security implements ISettings {
 	 *
 	 * E.g.: 70
 	 */
+	#[\Override]
 	public function getPriority(): int {
 		return 10;
 	}

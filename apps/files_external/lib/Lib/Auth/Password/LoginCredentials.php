@@ -1,26 +1,25 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2018-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2015 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Files_External\Lib\Auth\Password;
 
 use OCA\Files_External\Lib\Auth\AuthMechanism;
+use OCA\Files_External\Lib\DefinitionParameter;
 use OCA\Files_External\Lib\InsufficientDataForMeaningfulAnswerException;
 use OCA\Files_External\Lib\StorageConfig;
-use OCA\Files_External\Listener\StorePasswordListener;
 use OCP\Authentication\Exceptions\CredentialsUnavailableException;
 use OCP\Authentication\LoginCredentials\IStore as CredentialsStore;
-use OCP\EventDispatcher\IEventDispatcher;
 use OCP\IL10N;
 use OCP\ISession;
 use OCP\IUser;
 use OCP\IUserBackend;
 use OCP\LDAP\ILDAPProviderFactory;
 use OCP\Security\ICredentialsManager;
-use OCP\User\Events\PasswordUpdatedEvent;
-use OCP\User\Events\UserLoggedInEvent;
 
 /**
  * Username and password from login credentials, saved in DB
@@ -28,40 +27,23 @@ use OCP\User\Events\UserLoggedInEvent;
 class LoginCredentials extends AuthMechanism {
 	public const CREDENTIALS_IDENTIFIER = 'password::logincredentials/credentials';
 
-	/** @var ISession */
-	protected $session;
-
-	/** @var ICredentialsManager */
-	protected $credentialsManager;
-
-	/** @var CredentialsStore */
-	private $credentialsStore;
-
-	/** @var ILDAPProviderFactory */
-	private $ldapFactory;
-
 	public function __construct(
 		IL10N $l,
-		ISession $session,
-		ICredentialsManager $credentialsManager,
-		CredentialsStore $credentialsStore,
-		IEventDispatcher $eventDispatcher,
-		ILDAPProviderFactory $ldapFactory,
+		protected ISession $session,
+		protected ICredentialsManager $credentialsManager,
+		private CredentialsStore $credentialsStore,
+		private ILDAPProviderFactory $ldapFactory,
 	) {
-		$this->session = $session;
-		$this->credentialsManager = $credentialsManager;
-		$this->credentialsStore = $credentialsStore;
-		$this->ldapFactory = $ldapFactory;
-
 		$this
 			->setIdentifier('password::logincredentials')
 			->setScheme(self::SCHEME_PASSWORD)
 			->setText($l->t('Log-in credentials, save in database'))
 			->addParameters([
+				(new DefinitionParameter('password', $l->t('Password')))
+					->setType(DefinitionParameter::VALUE_PASSWORD)
+					->setFlag(DefinitionParameter::FLAG_HIDDEN)
+					->setFlag(DefinitionParameter::FLAG_OPTIONAL),
 			]);
-
-		$eventDispatcher->addServiceListener(UserLoggedInEvent::class, StorePasswordListener::class);
-		$eventDispatcher->addServiceListener(PasswordUpdatedEvent::class, StorePasswordListener::class);
 	}
 
 	private function getCredentials(IUser $user): array {
@@ -94,6 +76,7 @@ class LoginCredentials extends AuthMechanism {
 	/**
 	 * @return void
 	 */
+	#[\Override]
 	public function manipulateStorageConfig(StorageConfig &$storage, ?IUser $user = null) {
 		if (!isset($user)) {
 			throw new InsufficientDataForMeaningfulAnswerException('No login credentials saved');

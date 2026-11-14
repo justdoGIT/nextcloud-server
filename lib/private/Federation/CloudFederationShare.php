@@ -1,11 +1,15 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2018 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OC\Federation;
 
+use OCP\Constants;
 use OCP\Federation\ICloudFederationShare;
+use OCP\OCM\Permissions;
 use OCP\Share\IShare;
 
 class CloudFederationShare implements ICloudFederationShare {
@@ -20,6 +24,8 @@ class CloudFederationShare implements ICloudFederationShare {
 		'ownerDisplayName' => '',
 		'sharedBy' => '',
 		'sharedByDisplayName' => '',
+		'sender' => '',
+		'senderDisplayName' => '',
 		'protocol' => []
 	];
 
@@ -37,6 +43,9 @@ class CloudFederationShare implements ICloudFederationShare {
 	 * @param string $shareType ('group' or 'user' share)
 	 * @param string $resourceType ('file', 'calendar',...)
 	 * @param string $sharedSecret
+	 * @param bool $useProtocolObject whether to use protocol-specific properties instead of legacy options
+	 * @param string $webdavUri
+	 * @param int $permissions Nextcloud permission bitmask
 	 */
 	public function __construct($shareWith = '',
 		$name = '',
@@ -49,6 +58,9 @@ class CloudFederationShare implements ICloudFederationShare {
 		$shareType = '',
 		$resourceType = '',
 		$sharedSecret = '',
+		$useProtocolObject = false,
+		$webdavUri = '',
+		int $permissions = Constants::PERMISSION_READ,
 	) {
 		$this->setShareWith($shareWith);
 		$this->setResourceName($name);
@@ -58,13 +70,26 @@ class CloudFederationShare implements ICloudFederationShare {
 		$this->setOwnerDisplayName($ownerDisplayName);
 		$this->setSharedBy($sharedBy);
 		$this->setSharedByDisplayName($sharedByDisplayName);
-		$this->setProtocol([
-			'name' => 'webdav',
-			'options' => [
-				'sharedSecret' => $sharedSecret,
-				'permissions' => '{http://open-cloud-mesh.org/ns}share-permissions'
-			]
-		]);
+
+		if ($useProtocolObject) {
+			$this->setProtocol([
+				'name' => 'webdav',
+				'webdav' => [
+					'uri' => $webdavUri,
+					'sharedSecret' => $sharedSecret,
+					'permissions' => Permissions::fromNextcloud($permissions)
+				]
+			]);
+		} else {
+			$this->setProtocol([
+				'name' => 'webdav',
+				'options' => [
+					'sharedSecret' => $sharedSecret,
+					'permissions' => '{http://open-cloud-mesh.org/ns}share-permissions'
+				]
+			]);
+		}
+
 		$this->setShareType($shareType);
 		$this->setResourceType($resourceType);
 	}
@@ -76,6 +101,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function setShareWith($user) {
 		$this->share['shareWith'] = $user;
 	}
@@ -87,6 +113,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function setResourceName($name) {
 		$this->share['name'] = $name;
 	}
@@ -98,6 +125,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function setResourceType($resourceType) {
 		$this->share['resourceType'] = $resourceType;
 	}
@@ -109,6 +137,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function setDescription($description) {
 		$this->share['description'] = $description;
 	}
@@ -120,8 +149,9 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function setProviderId($providerId) {
-		$this->share['providerId'] = $providerId;
+		$this->share['providerId'] = (string)$providerId;
 	}
 
 	/**
@@ -131,6 +161,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function setOwner($owner) {
 		$this->share['owner'] = $owner;
 	}
@@ -142,6 +173,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function setOwnerDisplayName($ownerDisplayName) {
 		$this->share['ownerDisplayName'] = $ownerDisplayName;
 	}
@@ -153,8 +185,10 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function setSharedBy($sharedBy) {
 		$this->share['sharedBy'] = $sharedBy;
+		$this->share['sender'] = $sharedBy;
 	}
 
 	/**
@@ -164,8 +198,10 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function setSharedByDisplayName($sharedByDisplayName) {
 		$this->share['sharedByDisplayName'] = $sharedByDisplayName;
+		$this->share['senderDisplayName'] = $sharedByDisplayName;
 	}
 
 	/**
@@ -175,6 +211,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function setProtocol(array $protocol) {
 		$this->share['protocol'] = $protocol;
 	}
@@ -186,6 +223,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function setShareType($shareType) {
 		if ($shareType === 'group' || $shareType === IShare::TYPE_REMOTE_GROUP) {
 			$this->share['shareType'] = 'group';
@@ -201,6 +239,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function getShare() {
 		return $this->share;
 	}
@@ -212,6 +251,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function getShareWith() {
 		return $this->share['shareWith'];
 	}
@@ -223,6 +263,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function getResourceName() {
 		return $this->share['name'];
 	}
@@ -234,6 +275,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function getResourceType() {
 		return $this->share['resourceType'];
 	}
@@ -245,6 +287,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function getDescription() {
 		return $this->share['description'];
 	}
@@ -256,6 +299,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function getProviderId() {
 		return $this->share['providerId'];
 	}
@@ -267,6 +311,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function getOwner() {
 		return $this->share['owner'];
 	}
@@ -278,6 +323,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function getOwnerDisplayName() {
 		return $this->share['ownerDisplayName'];
 	}
@@ -289,6 +335,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function getSharedBy() {
 		return $this->share['sharedBy'];
 	}
@@ -300,6 +347,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function getSharedByDisplayName() {
 		return $this->share['sharedByDisplayName'];
 	}
@@ -311,6 +359,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function getShareType() {
 		return $this->share['shareType'];
 	}
@@ -322,8 +371,32 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function getShareSecret() {
-		return $this->share['protocol']['options']['sharedSecret'];
+		$protocol = $this->share['protocol'];
+		if (isset($protocol['options']['sharedSecret'])) {
+			return $protocol['options']['sharedSecret'];
+		}
+
+		if (isset($protocol['name'])) {
+			$protocolName = $protocol['name'];
+			// New single-protocol format: the secret lives under the protocol name.
+			if (isset($protocol[$protocolName]['sharedSecret']) && is_string($protocol[$protocolName]['sharedSecret'])) {
+				return $protocol[$protocolName]['sharedSecret'];
+			}
+			// Multi-protocol envelope (name => 'multi'): the secret lives in one of
+			// the sibling protocol entries, which all carry the same share secret.
+			foreach ($protocol as $key => $value) {
+				if ($key === 'name' || $key === 'options' || !is_array($value)) {
+					continue;
+				}
+				if (isset($value['sharedSecret']) && is_string($value['sharedSecret'])) {
+					return $value['sharedSecret'];
+				}
+			}
+		}
+
+		return '';
 	}
 
 	/**
@@ -333,6 +406,7 @@ class CloudFederationShare implements ICloudFederationShare {
 	 *
 	 * @since 14.0.0
 	 */
+	#[\Override]
 	public function getProtocol() {
 		return $this->share['protocol'];
 	}

@@ -1,8 +1,12 @@
 <?php
+
+declare(strict_types=1);
+
 /**
  * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Files_External\Settings;
 
 use OCP\IL10N;
@@ -10,18 +14,14 @@ use OCP\IURLGenerator;
 use OCP\Settings\IIconSection;
 
 class Section implements IIconSection {
-	/** @var IL10N */
-	private $l;
-	/** @var IURLGenerator */
-	private $url;
-
 	/**
 	 * @param IURLGenerator $url
 	 * @param IL10N $l
 	 */
-	public function __construct(IURLGenerator $url, IL10N $l) {
-		$this->url = $url;
-		$this->l = $l;
+	public function __construct(
+		private IURLGenerator $url,
+		private IL10N $l,
+	) {
 	}
 
 	/**
@@ -30,6 +30,7 @@ class Section implements IIconSection {
 	 *
 	 * @returns string
 	 */
+	#[\Override]
 	public function getID() {
 		return 'externalstorages';
 	}
@@ -40,6 +41,7 @@ class Section implements IIconSection {
 	 *
 	 * @return string
 	 */
+	#[\Override]
 	public function getName() {
 		return $this->l->t('External storage');
 	}
@@ -51,6 +53,7 @@ class Section implements IIconSection {
 	 *
 	 * E.g.: 70
 	 */
+	#[\Override]
 	public function getPriority() {
 		return 10;
 	}
@@ -58,6 +61,7 @@ class Section implements IIconSection {
 	/**
 	 * {@inheritdoc}
 	 */
+	#[\Override]
 	public function getIcon() {
 		return $this->url->imagePath('files_external', 'app-dark.svg');
 	}

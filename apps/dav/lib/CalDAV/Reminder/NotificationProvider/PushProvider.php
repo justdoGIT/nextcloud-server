@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2019 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\CalDAV\Reminder\NotificationProvider;
 
 use OCA\DAV\AppInfo\Application;
@@ -30,21 +31,15 @@ class PushProvider extends AbstractProvider {
 	/** @var string */
 	public const NOTIFICATION_TYPE = 'DISPLAY';
 
-	/** @var IManager */
-	private $manager;
-
-	/** @var ITimeFactory */
-	private $timeFactory;
-
-	public function __construct(IConfig $config,
-		IManager $manager,
+	public function __construct(
+		IConfig $config,
+		private IManager $manager,
 		LoggerInterface $logger,
 		L10NFactory $l10nFactory,
 		IURLGenerator $urlGenerator,
-		ITimeFactory $timeFactory) {
+		private ITimeFactory $timeFactory,
+	) {
 		parent::__construct($logger, $l10nFactory, $urlGenerator, $config);
-		$this->manager = $manager;
-		$this->timeFactory = $timeFactory;
 	}
 
 	/**
@@ -56,6 +51,7 @@ class PushProvider extends AbstractProvider {
 	 * @param IUser[] $users
 	 * @throws \Exception
 	 */
+	#[\Override]
 	public function send(VEvent $vevent,
 		?string $calendarDisplayName,
 		array $principalEmailAddresses,

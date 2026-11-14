@@ -17,10 +17,37 @@ namespace OCA\Files;
  *     filename: ?string,
  *     lastmod: int,
  *     mime: string,
- *     size: int,
+ *     size: int|float,
  *     type: string,
  *     hasPreview: bool,
+ *     permissions: int,
  * }
+ *
+ * @psalm-type FilesTemplateField = array{
+ *     index: string,
+ *     type: string,
+ *     alias: ?string,
+ *     tag: ?string,
+ *     id: ?int,
+ *     content?: string,
+ *     checked?: bool,
+ * }
+ *
+ * @psalm-type FilesTemplate = array{
+ *      templateType: string,
+ *      templateId: string,
+ *      basename: string,
+ *      etag: string,
+ *      fileid: int,
+ *      filename: string,
+ *      lastmod: int,
+ *      mime: string,
+ *      size: int|float,
+ *      type: string,
+ *      hasPreview: bool,
+ *      previewUrl: ?string,
+ *      fields: list<FilesTemplateField>,
+ *  }
  *
  * @psalm-type FilesTemplateFileCreator = array{
  *     app: string,
@@ -28,15 +55,13 @@ namespace OCA\Files;
  *     extension: string,
  *     iconClass: ?string,
  *     iconSvgInline: ?string,
- *     mimetypes: string[],
+ *     mimetypes: list<string>,
  *     ratio: ?float,
  *     actionLabel: string,
  * }
  *
- * @psalm-type FilesTemplateField = array{
- *     index: string,
- *     content: string,
- *     type: string,
+ * @psalm-type FilesTemplateFileCreatorWithTemplates = FilesTemplateFileCreator&array{
+ *     templates: list<FilesTemplate>,
  * }
  *
  * @psalm-type FilesFolderTree = list<array{

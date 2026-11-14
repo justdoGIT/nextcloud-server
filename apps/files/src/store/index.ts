@@ -5,4 +5,7 @@
 
 import { createPinia } from 'pinia'
 
+/**
+ * The Pinia instance for the Files app.
+ */
 export const pinia = createPinia()

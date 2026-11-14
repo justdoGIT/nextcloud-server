@@ -1,35 +1,38 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2019-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Files_Sharing\Tests;
 
+use OC\Files\Cache\Cache;
+use OC\Files\Storage\Storage;
 use OC\Files\View;
 use OCP\Constants;
 use OCP\Share\IShare;
 
 /**
  * Class WatcherTest
- *
- * @group DB
  */
+#[\PHPUnit\Framework\Attributes\Group(name: 'DB')]
 class WatcherTest extends TestCase {
 
-	/** @var \OC\Files\Storage\Storage */
+	/** @var Storage */
 	private $ownerStorage;
 
-	/** @var \OC\Files\Cache\Cache */
+	/** @var Cache */
 	private $ownerCache;
 
-	/** @var \OC\Files\Storage\Storage */
+	/** @var Storage */
 	private $sharedStorage;
 
-	/** @var \OC\Files\Cache\Cache */
+	/** @var Cache */
 	private $sharedCache;
 
-	/** @var \OCP\Share\IShare */
+	/** @var IShare */
 	private $_share;
 
 	protected function setUp(): void {

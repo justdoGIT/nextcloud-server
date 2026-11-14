@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2019 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Connector\Sabre;
 
 use OCP\Share\IShare;
@@ -18,11 +19,10 @@ use Sabre\Xml\XmlSerializable;
 class ShareeList implements XmlSerializable {
 	public const NS_NEXTCLOUD = 'http://nextcloud.org/ns';
 
-	/** @var IShare[] */
-	private $shares;
-
-	public function __construct(array $shares) {
-		$this->shares = $shares;
+	public function __construct(
+		/** @var IShare[] */
+		private array $shares,
+	) {
 	}
 
 	/**
@@ -31,6 +31,7 @@ class ShareeList implements XmlSerializable {
 	 * @param Writer $writer
 	 * @return void
 	 */
+	#[\Override]
 	public function xmlSerialize(Writer $writer) {
 		foreach ($this->shares as $share) {
 			$writer->startElement('{' . self::NS_NEXTCLOUD . '}sharee');

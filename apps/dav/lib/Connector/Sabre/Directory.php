@@ -5,19 +5,24 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\Connector\Sabre;
 
-use OC\Files\Mount\MoveableMount;
+use OC\Files\Utils\PathHelper;
 use OC\Files\View;
 use OCA\DAV\AppInfo\Application;
 use OCA\DAV\Connector\Sabre\Exception\FileLocked;
 use OCA\DAV\Connector\Sabre\Exception\Forbidden;
 use OCA\DAV\Connector\Sabre\Exception\InvalidPath;
+use OCA\DAV\Storage\PublicShareWrapper;
 use OCP\App\IAppManager;
+use OCP\Constants;
 use OCP\Files\FileInfo;
 use OCP\Files\Folder;
 use OCP\Files\ForbiddenException;
 use OCP\Files\InvalidPathException;
+use OCP\Files\Mount\IMountManager;
+use OCP\Files\Mount\IMovableMount;
 use OCP\Files\NotFoundException;
 use OCP\Files\NotPermittedException;
 use OCP\Files\StorageNotAvailableException;
@@ -35,24 +40,33 @@ use Sabre\DAV\Exception\NotFound;
 use Sabre\DAV\Exception\ServiceUnavailable;
 use Sabre\DAV\IFile;
 use Sabre\DAV\INode;
+use Sabre\DAV\INodeByPath;
 
-class Directory extends Node implements \Sabre\DAV\ICollection, \Sabre\DAV\IQuota, \Sabre\DAV\IMoveTarget, \Sabre\DAV\ICopyTarget {
+class Directory extends Node implements
+	\Sabre\DAV\ICollection,
+	\Sabre\DAV\IQuota,
+	\Sabre\DAV\IMoveTarget,
+	\Sabre\DAV\ICopyTarget,
+	INodeByPath {
 	/**
 	 * Cached directory content
-	 * @var \OCP\Files\FileInfo[]
+	 * @var FileInfo[]
 	 */
 	private ?array $dirContent = null;
 
 	/** Cached quota info */
 	private ?array $quotaInfo = null;
-	private ?CachingTree $tree = null;
 
 	/**
 	 * Sets up the node, expects a full path name
 	 */
-	public function __construct(View $view, FileInfo $info, ?CachingTree $tree = null, ?IShareManager $shareManager = null) {
+	public function __construct(
+		View $view,
+		FileInfo $info,
+		private ?CachingTree $tree = null,
+		?IShareManager $shareManager = null,
+	) {
 		parent::__construct($view, $info, $shareManager);
-		$this->tree = $tree;
 	}
 
 	/**
@@ -87,6 +101,7 @@ class Directory extends Node implements \Sabre\DAV\ICollection, \Sabre\DAV\IQuot
 	 * @throws \Sabre\DAV\Exception\Forbidden
 	 * @throws \Sabre\DAV\Exception\ServiceUnavailable
 	 */
+	#[\Override]
 	public function createFile($name, $data = null) {
 		try {
 			if (!$this->fileView->isCreatable($this->path)) {
@@ -108,13 +123,18 @@ class Directory extends Node implements \Sabre\DAV\ICollection, \Sabre\DAV\IQuot
 
 			// only allow 1 process to upload a file at once but still allow reading the file while writing the part file
 			$node->acquireLock(ILockingProvider::LOCK_SHARED);
-			$this->fileView->lockFile($path . '.upload.part', ILockingProvider::LOCK_EXCLUSIVE);
+			$this->fileView->lockFile($this->path . '/' . $name . '.upload.part', ILockingProvider::LOCK_EXCLUSIVE);
 
-			$result = $node->put($data);
-
-			$this->fileView->unlockFile($path . '.upload.part', ILockingProvider::LOCK_EXCLUSIVE);
-			$node->releaseLock(ILockingProvider::LOCK_SHARED);
-			return $result;
+			try {
+				return $node->put($data);
+			} finally {
+				// Always release the locks, even when the upload failed or was
+				// interrupted. Otherwise a failed attempt leaves the exclusive
+				// part-file lock behind and every later upload to the same path
+				// keeps getting rejected with 423 until the lock TTL expires.
+				$this->fileView->unlockFile($this->path . '/' . $name . '.upload.part', ILockingProvider::LOCK_EXCLUSIVE);
+				$node->releaseLock(ILockingProvider::LOCK_SHARED);
+			}
 		} catch (StorageNotAvailableException $e) {
 			throw new \Sabre\DAV\Exception\ServiceUnavailable($e->getMessage(), $e->getCode(), $e);
 		} catch (InvalidPathException $ex) {
@@ -135,6 +155,7 @@ class Directory extends Node implements \Sabre\DAV\ICollection, \Sabre\DAV\IQuot
 	 * @throws \Sabre\DAV\Exception\Forbidden
 	 * @throws \Sabre\DAV\Exception\ServiceUnavailable
 	 */
+	#[\Override]
 	public function createDirectory($name) {
 		try {
 			if (!$this->info->isCreatable()) {
@@ -161,14 +182,28 @@ class Directory extends Node implements \Sabre\DAV\ICollection, \Sabre\DAV\IQuot
 	 * Returns a specific child node, referenced by its name
 	 *
 	 * @param string $name
-	 * @param \OCP\Files\FileInfo $info
+	 * @param FileInfo $info
 	 * @return \Sabre\DAV\INode
 	 * @throws InvalidPath
 	 * @throws \Sabre\DAV\Exception\NotFound
 	 * @throws \Sabre\DAV\Exception\ServiceUnavailable
 	 */
+	#[\Override]
 	public function getChild($name, $info = null, ?IRequest $request = null, ?IL10N $l10n = null) {
-		if (!$this->info->isReadable()) {
+		$storage = $this->info->getStorage();
+		$allowDirectory = false;
+
+		// Checking if we're in a file drop
+		// If we are, then only PUT and MKCOL are allowed (see plugin)
+		// so we are safe to return the directory without a risk of
+		// leaking files and folders structure.
+		if ($storage->instanceOfStorage(PublicShareWrapper::class)) {
+			$share = $storage->getShare();
+			$allowDirectory = ($share->getPermissions() & Constants::PERMISSION_READ) !== Constants::PERMISSION_READ;
+		}
+
+		// For file drop we need to be allowed to read the directory with the nickname
+		if (!$allowDirectory && !$this->info->isReadable()) {
 			// avoid detecting files through this way
 			throw new NotFound();
 		}
@@ -192,8 +227,13 @@ class Directory extends Node implements \Sabre\DAV\ICollection, \Sabre\DAV\IQuot
 		}
 
 		if ($info->getMimeType() === FileInfo::MIMETYPE_FOLDER) {
-			$node = new \OCA\DAV\Connector\Sabre\Directory($this->fileView, $info, $this->tree, $this->shareManager);
+			$node = new Directory($this->fileView, $info, $this->tree, $this->shareManager);
 		} else {
+			// In case reading a directory was allowed but it turns out the node was a not a directory, reject it now.
+			if (!$this->info->isReadable()) {
+				throw new NotFound();
+			}
+
 			$node = new File($this->fileView, $info, $this->shareManager, $request, $l10n);
 		}
 		if ($this->tree) {
@@ -209,6 +249,7 @@ class Directory extends Node implements \Sabre\DAV\ICollection, \Sabre\DAV\IQuot
 	 * @throws \Sabre\DAV\Exception\Locked
 	 * @throws Forbidden
 	 */
+	#[\Override]
 	public function getChildren() {
 		if (!is_null($this->dirContent)) {
 			return $this->dirContent;
@@ -217,7 +258,7 @@ class Directory extends Node implements \Sabre\DAV\ICollection, \Sabre\DAV\IQuot
 			if (!$this->info->isReadable()) {
 				// return 403 instead of 404 because a 404 would make
 				// the caller believe that the collection itself does not exist
-				if (Server::get(IAppManager::class)->isInstalled('files_accesscontrol')) {
+				if (Server::get(IAppManager::class)->isEnabledForAnyone('files_accesscontrol')) {
 					throw new Forbidden('No read permissions. This might be caused by files_accesscontrol, check your configured rules');
 				} else {
 					throw new Forbidden('No read permissions');
@@ -229,8 +270,8 @@ class Directory extends Node implements \Sabre\DAV\ICollection, \Sabre\DAV\IQuot
 		}
 
 		$nodes = [];
-		$request = \OC::$server->get(IRequest::class);
-		$l10nFactory = \OC::$server->get(IFactory::class);
+		$request = Server::get(IRequest::class);
+		$l10nFactory = Server::get(IFactory::class);
 		$l10n = $l10nFactory->get(Application::APP_ID);
 		foreach ($folderContent as $info) {
 			$node = $this->getChild($info->getName(), $info, $request, $l10n);
@@ -246,6 +287,7 @@ class Directory extends Node implements \Sabre\DAV\ICollection, \Sabre\DAV\IQuot
 	 * @param string $name
 	 * @return bool
 	 */
+	#[\Override]
 	public function childExists($name) {
 		// note: here we do NOT resolve the chunk file name to the real file name
 		// to make sure we return false when checking for file existence with a chunk
@@ -265,6 +307,7 @@ class Directory extends Node implements \Sabre\DAV\ICollection, \Sabre\DAV\IQuot
 	 * @throws FileLocked
 	 * @throws \Sabre\DAV\Exception\Forbidden
 	 */
+	#[\Override]
 	public function delete() {
 		if ($this->path === '' || $this->path === '/' || !$this->info->isDeletable()) {
 			throw new \Sabre\DAV\Exception\Forbidden();
@@ -283,7 +326,7 @@ class Directory extends Node implements \Sabre\DAV\ICollection, \Sabre\DAV\IQuot
 	}
 
 	private function getLogger(): LoggerInterface {
-		return \OC::$server->get(LoggerInterface::class);
+		return Server::get(LoggerInterface::class);
 	}
 
 	/**
@@ -291,6 +334,7 @@ class Directory extends Node implements \Sabre\DAV\ICollection, \Sabre\DAV\IQuot
 	 *
 	 * @return array
 	 */
+	#[\Override]
 	public function getQuotaInfo() {
 		if ($this->quotaInfo) {
 			return $this->quotaInfo;
@@ -350,6 +394,7 @@ class Directory extends Node implements \Sabre\DAV\ICollection, \Sabre\DAV\IQuot
 	 * @throws FileLocked
 	 * @throws \Sabre\DAV\Exception\Forbidden
 	 */
+	#[\Override]
 	public function moveInto($targetName, $fullSourcePath, INode $sourceNode) {
 		if (!$sourceNode instanceof Node) {
 			// it's a file of another kind, like FutureFile
@@ -360,12 +405,7 @@ class Directory extends Node implements \Sabre\DAV\ICollection, \Sabre\DAV\IQuot
 			throw new BadRequest('Incompatible node types');
 		}
 
-		if (!$this->fileView) {
-			throw new ServiceUnavailable('filesystem not setup');
-		}
-
 		$destinationPath = $this->getPath() . '/' . $targetName;
-
 
 		$targetNodeExists = $this->childExists($targetName);
 
@@ -381,9 +421,9 @@ class Directory extends Node implements \Sabre\DAV\ICollection, \Sabre\DAV\IQuot
 		$sourcePath = $sourceNode->getPath();
 
 		$isMovableMount = false;
-		$sourceMount = \OC::$server->getMountManager()->find($this->fileView->getAbsolutePath($sourcePath));
+		$sourceMount = Server::get(IMountManager::class)->find($this->fileView->getAbsolutePath($sourcePath));
 		$internalPath = $sourceMount->getInternalPath($this->fileView->getAbsolutePath($sourcePath));
-		if ($sourceMount instanceof MoveableMount && $internalPath === '') {
+		if ($sourceMount instanceof IMovableMount && $internalPath === '') {
 			$isMovableMount = true;
 		}
 
@@ -431,7 +471,7 @@ class Directory extends Node implements \Sabre\DAV\ICollection, \Sabre\DAV\IQuot
 		return true;
 	}
 
-
+	#[\Override]
 	public function copyInto($targetName, $sourcePath, INode $sourceNode) {
 		if ($sourceNode instanceof File || $sourceNode instanceof Directory) {
 			try {
@@ -448,7 +488,13 @@ class Directory extends Node implements \Sabre\DAV\ICollection, \Sabre\DAV\IQuot
 					throw new InvalidPath($ex->getMessage());
 				}
 
-				return $this->fileView->copy($sourcePath, $destinationPath);
+				$copyOkay = $this->fileView->copy($sourcePath, $destinationPath);
+
+				if (!$copyOkay) {
+					throw new \Sabre\DAV\Exception\Forbidden('Copy did not proceed');
+				}
+
+				return true;
 			} catch (StorageNotAvailableException $e) {
 				throw new ServiceUnavailable($e->getMessage(), $e->getCode(), $e);
 			} catch (ForbiddenException $ex) {
@@ -461,7 +507,75 @@ class Directory extends Node implements \Sabre\DAV\ICollection, \Sabre\DAV\IQuot
 		return false;
 	}
 
+	#[\Override]
 	public function getNode(): Folder {
 		return $this->node;
+	}
+
+	#[\Override]
+	public function getNodeForPath($path): INode {
+		$storage = $this->info->getStorage();
+		$allowDirectory = false;
+
+		// Checking if we're in a file drop
+		// If we are, then only PUT and MKCOL are allowed (see plugin)
+		// so we are safe to return the directory without a risk of
+		// leaking files and folders structure.
+		if ($storage->instanceOfStorage(PublicShareWrapper::class)) {
+			$share = $storage->getShare();
+			$allowDirectory = ($share->getPermissions() & Constants::PERMISSION_READ) !== Constants::PERMISSION_READ;
+		}
+
+		// For file drop we need to be allowed to read the directory with the nickname
+		if (!$allowDirectory && !$this->info->isReadable()) {
+			// avoid detecting files through this way
+			throw new NotFound();
+		}
+
+		$destinationPath = PathHelper::normalizePath($this->getPath() . '/' . $path);
+		$destinationDir = dirname($destinationPath);
+
+		try {
+			$info = $this->getNode()->get($path);
+		} catch (NotFoundException $e) {
+			throw new \Sabre\DAV\Exception\NotFound('File with name ' . $destinationPath
+				. ' could not be located', previous: $e);
+		} catch (StorageNotAvailableException $e) {
+			throw new \Sabre\DAV\Exception\ServiceUnavailable($e->getMessage(), 0, $e);
+		} catch (NotPermittedException $ex) {
+			throw new InvalidPath($ex->getMessage(), false, $ex);
+		}
+
+		if ($info->getMimeType() === FileInfo::MIMETYPE_FOLDER) {
+			$node = new Directory($this->fileView, $info, $this->tree, $this->shareManager);
+		} else {
+			// In case reading a directory was allowed but it turns out the node was a not a directory, reject it now.
+			if (!$this->info->isReadable()) {
+				throw new NotFound();
+			}
+
+			$node = new File($this->fileView, $info, $this->shareManager);
+		}
+		$this->tree?->cacheNode($node);
+
+		// recurse upwards until the root and check for read permissions to keep
+		// ACL checks working in files_accesscontrol
+		if (!$allowDirectory && $destinationDir !== '') {
+			$scanPath = $destinationPath;
+			while (($scanPath = dirname($scanPath)) !== '/') {
+				// fileView can get the parent info in a cheaper way compared
+				// to the node API
+				/** @psalm-suppress InternalMethod */
+				$info = $this->fileView->getFileInfo($scanPath, false);
+				$directory = new Directory($this->fileView, $info, $this->tree, $this->shareManager);
+				$readable = $directory->getNode()->isReadable();
+				if (!$readable) {
+					throw new \Sabre\DAV\Exception\NotFound('File with name ' . $destinationPath
+						. ' could not be located');
+				}
+			}
+		}
+
+		return $node;
 	}
 }

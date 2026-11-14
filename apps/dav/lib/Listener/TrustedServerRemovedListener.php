@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2022 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Listener;
 
 use OCA\DAV\CardDAV\CardDavBackend;
@@ -15,12 +16,12 @@ use OCP\Federation\Events\TrustedServerRemovedEvent;
 
 /** @template-implements IEventListener<TrustedServerRemovedEvent> */
 class TrustedServerRemovedListener implements IEventListener {
-	private CardDavBackend $cardDavBackend;
-
-	public function __construct(CardDavBackend $cardDavBackend) {
-		$this->cardDavBackend = $cardDavBackend;
+	public function __construct(
+		private CardDavBackend $cardDavBackend,
+	) {
 	}
 
+	#[\Override]
 	public function handle(Event $event): void {
 		if (!$event instanceof TrustedServerRemovedEvent) {
 			return;

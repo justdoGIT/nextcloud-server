@@ -1,40 +1,44 @@
-/**
+/*!
  * SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-import type { ComponentPublicInstance, VueConstructor } from 'vue'
 
-import { Folder, Header, registerFileListHeaders } from '@nextcloud/files'
-import Vue from 'vue'
+import type { IFolder } from '@nextcloud/files'
+import type { App } from 'vue'
+import type FilesHeaderNoteToRecipient from '../views/FilesHeaderNoteToRecipient.vue'
 
-type IFilesHeaderNoteToRecipient = ComponentPublicInstance & { updateFolder: (folder: Folder) => void }
+import { registerFileListHeader } from '@nextcloud/files'
+import { createApp } from 'vue'
 
 /**
  * Register the  "note to recipient" as a files list header
  */
 export default function registerNoteToRecipient() {
-	let FilesHeaderNoteToRecipient: VueConstructor
-	let instance: IFilesHeaderNoteToRecipient
+	let app: App
+	let headerComponent: typeof FilesHeaderNoteToRecipient
+	let instance: InstanceType<typeof FilesHeaderNoteToRecipient>
 
-	registerFileListHeaders(new Header({
+	registerFileListHeader({
 		id: 'note-to-recipient',
 		order: 0,
 		// Always if there is a note
-		enabled: (folder: Folder) => Boolean(folder.attributes.note),
+		enabled: (folder: IFolder) => Boolean(folder.attributes.note),
 		// Update the root folder if needed
-		updated: (folder: Folder) => {
+		updated: (folder: IFolder) => {
 			if (instance) {
 				instance.updateFolder(folder)
 			}
 		},
 		// render simply spawns the component
-		render: async (el: HTMLElement, folder: Folder) => {
-			if (FilesHeaderNoteToRecipient === undefined) {
-				const { default: component } = await import('../views/FilesHeaderNoteToRecipient.vue')
-				FilesHeaderNoteToRecipient = Vue.extend(component)
+		render: async (el: HTMLElement, folder: IFolder) => {
+			if (app) {
+				app.unmount()
+			} else {
+				headerComponent = (await import('../views/FilesHeaderNoteToRecipient.vue')).default
 			}
-			instance = new FilesHeaderNoteToRecipient().$mount(el) as unknown as IFilesHeaderNoteToRecipient
+			app = createApp(headerComponent)
+			instance = app.mount(el) as InstanceType<typeof FilesHeaderNoteToRecipient>
 			instance.updateFolder(folder)
 		},
-	}))
+	})
 }

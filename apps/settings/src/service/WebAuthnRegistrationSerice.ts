@@ -3,17 +3,22 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import type { RegistrationResponseJSON } from '@simplewebauthn/types'
+import type { PublicKeyCredentialCreationOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser'
 
+import axios, { isAxiosError } from '@nextcloud/axios'
 import { translate as t } from '@nextcloud/l10n'
 import { generateUrl } from '@nextcloud/router'
 import { startRegistration as registerWebAuthn } from '@simplewebauthn/browser'
+import logger from '../logger.ts'
 
-import axios, { isAxiosError } from '@nextcloud/axios'
-import logger from '../logger'
+export interface WebAuthnDevice {
+	id: number
+	name: string | null
+}
 
 /**
  * Start registering a new device
+ *
  * @return The device attributes
  */
 export async function startRegistration() {
@@ -21,18 +26,18 @@ export async function startRegistration() {
 
 	try {
 		logger.debug('Fetching webauthn registration data')
-		const { data } = await axios.get(url)
+		const { data } = await axios.get<PublicKeyCredentialCreationOptionsJSON>(url)
 		logger.debug('Start webauthn registration')
-		const attrs = await registerWebAuthn(data)
+		const attrs = await registerWebAuthn({ optionsJSON: data })
 		return attrs
 	} catch (e) {
 		logger.error(e as Error)
 		if (isAxiosError(e)) {
-			throw new Error(t('settings', 'Could not register device: Network error'))
+			throw new Error(t('settings', 'Could not register device: Network error'), { cause: e })
 		} else if ((e as Error).name === 'InvalidStateError') {
-			throw new Error(t('settings', 'Could not register device: Probably already registered'))
+			throw new Error(t('settings', 'Could not register device: Probably already registered'), { cause: e })
 		}
-		throw new Error(t('settings', 'Could not register device'))
+		throw new Error(t('settings', 'Could not register device'), { cause: e })
 	}
 }
 
@@ -43,7 +48,7 @@ export async function startRegistration() {
 export async function finishRegistration(name: string, data: RegistrationResponseJSON) {
 	const url = generateUrl('/settings/api/personal/webauthn/registration')
 
-	const resp = await axios.post(url, { name, data: JSON.stringify(data) })
+	const resp = await axios.post<WebAuthnDevice>(url, { name, data: JSON.stringify(data) })
 	return resp.data
 }
 

@@ -5,6 +5,7 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\Upload;
 
 use Sabre\DAV\IFile;
@@ -48,6 +49,7 @@ class AssemblyStream implements \Icewind\Streams\File {
 	 * @param string &$opened_path
 	 * @return bool
 	 */
+	#[\Override]
 	public function stream_open($path, $mode, $options, &$opened_path) {
 		$this->loadContext('assembly');
 
@@ -68,11 +70,16 @@ class AssemblyStream implements \Icewind\Streams\File {
 	 * @param int $whence
 	 * @return bool
 	 */
+	#[\Override]
 	public function stream_seek($offset, $whence = SEEK_SET) {
 		if ($whence === SEEK_CUR) {
 			$offset = $this->stream_tell() + $offset;
 		} elseif ($whence === SEEK_END) {
 			$offset = $this->size + $offset;
+		}
+
+		if ($offset === $this->pos) {
+			return true;
 		}
 
 		if ($offset > $this->size) {
@@ -95,7 +102,7 @@ class AssemblyStream implements \Icewind\Streams\File {
 
 		$stream = $this->getStream($this->nodes[$nodeIndex]);
 		$nodeOffset = $offset - $nodeStart;
-		if (fseek($stream, $nodeOffset) === -1) {
+		if ($nodeOffset > 0 && fseek($stream, $nodeOffset) === -1) {
 			return false;
 		}
 		$this->currentNode = $nodeIndex;
@@ -109,6 +116,7 @@ class AssemblyStream implements \Icewind\Streams\File {
 	/**
 	 * @return int
 	 */
+	#[\Override]
 	public function stream_tell() {
 		return $this->pos;
 	}
@@ -117,6 +125,7 @@ class AssemblyStream implements \Icewind\Streams\File {
 	 * @param int $count
 	 * @return string
 	 */
+	#[\Override]
 	public function stream_read($count) {
 		if (is_null($this->currentStream)) {
 			if ($this->currentNode < count($this->nodes)) {
@@ -126,9 +135,14 @@ class AssemblyStream implements \Icewind\Streams\File {
 			}
 		}
 
-		do {
+		$collectedData = '';
+		// read data until we either got all the data requested or there is no more stream left
+		while ($count > 0 && !is_null($this->currentStream)) {
 			$data = fread($this->currentStream, $count);
 			$read = strlen($data);
+
+			$count -= $read;
+			$collectedData .= $data;
 			$this->currentNodeRead += $read;
 
 			if (feof($this->currentStream)) {
@@ -145,20 +159,18 @@ class AssemblyStream implements \Icewind\Streams\File {
 					$this->currentStream = null;
 				}
 			}
-			// if no data read, try again with the next node because
-			// returning empty data can make the caller think there is no more
-			// data left to read
-		} while ($read === 0 && !is_null($this->currentStream));
+		}
 
 		// update position
-		$this->pos += $read;
-		return $data;
+		$this->pos += strlen($collectedData);
+		return $collectedData;
 	}
 
 	/**
 	 * @param string $data
 	 * @return int
 	 */
+	#[\Override]
 	public function stream_write($data) {
 		return false;
 	}
@@ -169,6 +181,7 @@ class AssemblyStream implements \Icewind\Streams\File {
 	 * @param int $arg2
 	 * @return bool
 	 */
+	#[\Override]
 	public function stream_set_option($option, $arg1, $arg2) {
 		return false;
 	}
@@ -177,6 +190,7 @@ class AssemblyStream implements \Icewind\Streams\File {
 	 * @param int $size
 	 * @return bool
 	 */
+	#[\Override]
 	public function stream_truncate($size) {
 		return false;
 	}
@@ -184,6 +198,7 @@ class AssemblyStream implements \Icewind\Streams\File {
 	/**
 	 * @return array
 	 */
+	#[\Override]
 	public function stream_stat() {
 		return [
 			'size' => $this->size,
@@ -194,6 +209,7 @@ class AssemblyStream implements \Icewind\Streams\File {
 	 * @param int $operation
 	 * @return bool
 	 */
+	#[\Override]
 	public function stream_lock($operation) {
 		return false;
 	}
@@ -201,6 +217,7 @@ class AssemblyStream implements \Icewind\Streams\File {
 	/**
 	 * @return bool
 	 */
+	#[\Override]
 	public function stream_flush() {
 		return false;
 	}
@@ -208,6 +225,7 @@ class AssemblyStream implements \Icewind\Streams\File {
 	/**
 	 * @return bool
 	 */
+	#[\Override]
 	public function stream_eof() {
 		return $this->pos >= $this->size || ($this->currentNode >= count($this->nodes) && $this->currentNode === null);
 	}
@@ -215,10 +233,10 @@ class AssemblyStream implements \Icewind\Streams\File {
 	/**
 	 * @return bool
 	 */
+	#[\Override]
 	public function stream_close() {
 		return true;
 	}
-
 
 	/**
 	 * Load the source from the stream context and return the context options
@@ -234,7 +252,7 @@ class AssemblyStream implements \Icewind\Streams\File {
 		} else {
 			throw new \BadMethodCallException('Invalid context, "' . $name . '" options not set');
 		}
-		if (isset($context['nodes']) and is_array($context['nodes'])) {
+		if (isset($context['nodes']) && is_array($context['nodes'])) {
 			$this->nodes = $context['nodes'];
 		} else {
 			throw new \BadMethodCallException('Invalid context, nodes not set');

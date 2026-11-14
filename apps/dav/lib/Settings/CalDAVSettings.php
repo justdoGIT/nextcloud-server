@@ -1,8 +1,12 @@
 <?php
+
+declare(strict_types=1);
+
 /**
  * SPDX-FileCopyrightText: 2017 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Settings;
 
 use OCA\DAV\AppInfo\Application;
@@ -12,19 +16,11 @@ use OCP\AppFramework\Services\IInitialState;
 use OCP\IConfig;
 use OCP\IURLGenerator;
 use OCP\Settings\IDelegatedSettings;
+use OCP\Util;
 
 class CalDAVSettings implements IDelegatedSettings {
 
-	/** @var IConfig */
-	private $config;
-
-	/** @var IInitialState */
-	private $initialState;
-
-	private IURLGenerator $urlGenerator;
-	private IAppManager $appManager;
-
-	private const defaults = [
+	private const array defaults = [
 		'sendInvitations' => 'yes',
 		'generateBirthdayCalendar' => 'yes',
 		'sendEventReminders' => 'yes',
@@ -38,22 +34,28 @@ class CalDAVSettings implements IDelegatedSettings {
 	 * @param IConfig $config
 	 * @param IInitialState $initialState
 	 */
-	public function __construct(IConfig $config, IInitialState $initialState, IURLGenerator $urlGenerator, IAppManager $appManager) {
-		$this->config = $config;
-		$this->initialState = $initialState;
-		$this->urlGenerator = $urlGenerator;
-		$this->appManager = $appManager;
+	public function __construct(
+		private IConfig $config,
+		private IInitialState $initialState,
+		private IURLGenerator $urlGenerator,
+		private IAppManager $appManager,
+	) {
 	}
 
+	#[\Override]
 	public function getForm(): TemplateResponse {
 		$this->initialState->provideInitialState('userSyncCalendarsDocUrl', $this->urlGenerator->linkToDocs('user-sync-calendars'));
 		foreach (self::defaults as $key => $default) {
 			$value = $this->config->getAppValue(Application::APP_ID, $key, $default);
 			$this->initialState->provideInitialState($key, $value === 'yes');
 		}
+
+		Util::addScript(Application::APP_ID, 'settings-admin-caldav');
+		Util::addStyle(Application::APP_ID, 'settings-admin-caldav');
 		return new TemplateResponse(Application::APP_ID, 'settings-admin-caldav');
 	}
 
+	#[\Override]
 	public function getSection(): ?string {
 		if (!$this->appManager->isBackendRequired(IAppManager::BACKEND_CALDAV)) {
 			return null;
@@ -65,17 +67,20 @@ class CalDAVSettings implements IDelegatedSettings {
 	/**
 	 * @return int
 	 */
+	#[\Override]
 	public function getPriority() {
 		return 10;
 	}
 
+	#[\Override]
 	public function getName(): ?string {
 		return null; // Only setting in this section
 	}
 
+	#[\Override]
 	public function getAuthorizedAppConfig(): array {
 		return [
-			'dav' => ['/(' . implode('|', array_keys(self::defaults)) . ')/']
+			'dav' => array_keys(self::defaults),
 		];
 	}
 }

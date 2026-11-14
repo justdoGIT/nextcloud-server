@@ -1,8 +1,10 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2017 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\User_LDAP\Notification;
 
 use OCP\L10N\IFactory;
@@ -12,14 +14,12 @@ use OCP\Notification\UnknownNotificationException;
 
 class Notifier implements INotifier {
 
-	/** @var IFactory */
-	protected $l10nFactory;
-
 	/**
 	 * @param IFactory $l10nFactory
 	 */
-	public function __construct(IFactory $l10nFactory) {
-		$this->l10nFactory = $l10nFactory;
+	public function __construct(
+		protected IFactory $l10nFactory,
+	) {
 	}
 
 	/**
@@ -28,6 +28,7 @@ class Notifier implements INotifier {
 	 * @return string
 	 * @since 17.0.0
 	 */
+	#[\Override]
 	public function getID(): string {
 		return 'user_ldap';
 	}
@@ -38,6 +39,7 @@ class Notifier implements INotifier {
 	 * @return string
 	 * @since 17.0.0
 	 */
+	#[\Override]
 	public function getName(): string {
 		return $this->l10nFactory->get('user_ldap')->t('LDAP User backend');
 	}
@@ -48,6 +50,7 @@ class Notifier implements INotifier {
 	 * @return INotification
 	 * @throws UnknownNotificationException When the notification was not prepared by a notifier
 	 */
+	#[\Override]
 	public function prepare(INotification $notification, string $languageCode): INotification {
 		if ($notification->getApp() !== 'user_ldap') {
 			// Not my app => throw
@@ -74,7 +77,6 @@ class Notifier implements INotifier {
 					));
 				}
 				return $notification;
-
 			default:
 				// Unknown subject => Unknown notification => throw
 				throw new UnknownNotificationException();

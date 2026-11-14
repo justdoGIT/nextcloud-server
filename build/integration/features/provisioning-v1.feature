@@ -4,6 +4,9 @@
 Feature: provisioning
   Background:
     Given using api version "1"
+    Given parameter "whitelist_0" of app "bruteForce" is set to "127.0.0.1"
+    Given parameter "whitelist_1" of app "bruteForce" is set to "::1"
+    Given parameter "apply_allowlist_to_ratelimit" of app "bruteforcesettings" is set to "true"
 
   Scenario: Getting an not existing user
     Given As an "admin"
@@ -69,12 +72,14 @@ Feature: provisioning
       | phone |
       | address |
       | website |
-      | twitter |
+	  | twitter |
+	  | bluesky |
       | fediverse |
       | organisation |
       | role |
       | headline |
       | biography |
+      | birthdate |
       | profile_enabled |
       | pronouns |
     Given As an "brand-new-user"
@@ -86,11 +91,13 @@ Feature: provisioning
       | address |
       | website |
       | twitter |
+	  | bluesky |
       | fediverse |
       | organisation |
       | role |
       | headline |
       | biography |
+      | birthdate |
       | profile_enabled |
       | pronouns |
     Then user "self" has editable fields
@@ -101,11 +108,13 @@ Feature: provisioning
       | address |
       | website |
       | twitter |
+	  | bluesky |
       | fediverse |
       | organisation |
       | role |
       | headline |
       | biography |
+      | birthdate |
       | profile_enabled |
       | pronouns |
 
@@ -155,6 +164,9 @@ Feature: provisioning
     And sending "PUT" to "/cloud/users/brand-new-user" with
       | key | twitter |
       | value | Nextcloud |
+    And sending "PUT" to "/cloud/users/brand-new-user" with
+	  | key | bluesky |
+	  | value | nextcloud.bsky.social |
     And the OCS status code should be "100"
     And the HTTP status code should be "200"
     Then user "brand-new-user" has
@@ -165,7 +177,37 @@ Feature: provisioning
       | phone | +4971125242890 |
       | address | Foo Bar Town |
       | website | https://nextcloud.com |
-      | twitter | Nextcloud |
+	  | twitter | Nextcloud |
+	  | bluesky | nextcloud.bsky.social |
+    And sending "PUT" to "/cloud/users/brand-new-user" with
+      | key | organisation |
+      | value | Nextcloud GmbH |
+    And sending "PUT" to "/cloud/users/brand-new-user" with
+      | key | role |
+      | value | Engineer |
+    And the OCS status code should be "100"
+    And the HTTP status code should be "200"
+    Then user "brand-new-user" has the following profile data
+      | userId | brand-new-user |
+      | displayname | Brand New User |
+      | organisation | Nextcloud GmbH |
+      | role | Engineer |
+      | address | Foo Bar Town |
+      | timezone | UTC |
+      | timezoneOffset | 0 |
+      | pronouns | NULL |
+
+  Scenario: Edit a user with mixed case emails
+    Given As an "admin"
+    And user "brand-new-user" exists
+    And sending "PUT" to "/cloud/users/brand-new-user" with
+      | key | email |
+      | value | mixed-CASE@Nextcloud.com |
+    And the OCS status code should be "100"
+    And the HTTP status code should be "200"
+    Then user "brand-new-user" has
+      | id | brand-new-user |
+      | email | mixed-case@nextcloud.com |
 
   Scenario: Edit a user account properties scopes
     Given user "brand-new-user" exists
@@ -180,6 +222,11 @@ Feature: provisioning
       | value | v2-local |
     Then the OCS status code should be "100"
     And the HTTP status code should be "200"
+	When sending "PUT" to "/cloud/users/brand-new-user" with
+	  | key | blueskyScope |
+	  | value | v2-local |
+	Then the OCS status code should be "100"
+	And the HTTP status code should be "200"
     When sending "PUT" to "/cloud/users/brand-new-user" with
       | key | addressScope |
       | value | v2-federated |
@@ -188,21 +235,6 @@ Feature: provisioning
     When sending "PUT" to "/cloud/users/brand-new-user" with
       | key | emailScope |
       | value | v2-published |
-    Then the OCS status code should be "100"
-    And the HTTP status code should be "200"
-    When sending "PUT" to "/cloud/users/brand-new-user" with
-      | key | websiteScope |
-      | value | public |
-    Then the OCS status code should be "100"
-    And the HTTP status code should be "200"
-    When sending "PUT" to "/cloud/users/brand-new-user" with
-      | key | displaynameScope |
-      | value | contacts |
-    Then the OCS status code should be "100"
-    And the HTTP status code should be "200"
-    When sending "PUT" to "/cloud/users/brand-new-user" with
-      | key | avatarScope |
-      | value | private |
     Then the OCS status code should be "100"
     And the HTTP status code should be "200"
     And sending "PUT" to "/cloud/users/brand-new-user" with
@@ -230,12 +262,10 @@ Feature: provisioning
     Then user "brand-new-user" has
       | id | brand-new-user |
       | phoneScope | v2-private |
-      | twitterScope | v2-local |
+	  | twitterScope | v2-local |
+	  | blueskyScope | v2-local |
       | addressScope | v2-federated |
       | emailScope | v2-published |
-      | websiteScope | v2-published |
-      | displaynameScope | v2-federated |
-      | avatarScope | v2-local |
 
   Scenario: Edit a user account multivalue property scopes
     Given user "brand-new-user" exists
@@ -450,15 +480,31 @@ Feature: provisioning
     Then groups returned are
       | España |
       | admin |
+      | hidden_group |
       | new-group |
 
   Scenario: create a subadmin
     Given As an "admin"
     And user "brand-new-user" exists
     And group "new-group" exists
+    And group "other-group" exists
     When sending "POST" to "/cloud/users/brand-new-user/subadmins" with
       | groupid | new-group |
     Then the OCS status code should be "100"
+    And the HTTP status code should be "200"
+
+    # Ensure self promotion is not possible
+    Given As an "brand-new-user"
+    When sending "POST" to "/cloud/users/brand-new-user/groups" with
+      | groupid | admin |
+    Then the OCS status code should be "104"
+    And the HTTP status code should be "200"
+
+    # Ensure self adding to other groups is not possible
+    Given As an "brand-new-user"
+    When sending "POST" to "/cloud/users/brand-new-user/groups" with
+      | groupid | other-group |
+    Then the OCS status code should be "104"
     And the HTTP status code should be "200"
 
   Scenario: get users using a subadmin
@@ -586,6 +632,7 @@ Feature: provisioning
     Then the OCS status code should be "100"
     And the HTTP status code should be "200"
     And apps returned are
+      | appstore |
       | cloud_federation_api |
       | comments |
       | contactsinteraction |
@@ -599,10 +646,13 @@ Feature: provisioning
       | files_trashbin |
       | files_versions |
       | lookup_server_connector |
+      | profile |
       | provisioning_api |
       | settings |
       | sharebymail |
+      | sharing |
       | systemtags |
+      | testing |
       | theming |
       | twofactor_backupcodes |
       | updatenotification |
@@ -628,6 +678,7 @@ Feature: provisioning
     And the HTTP status code should be "200"
 
   Scenario: enable an app
+    Given invoking occ with "app:disable testing"
     Given As an "admin"
     And app "testing" is disabled
     When sending "POST" to "/cloud/apps/testing"
@@ -642,12 +693,14 @@ Feature: provisioning
     And the HTTP status code should be "200"
 
   Scenario: disable an app
+    Given invoking occ with "app:enable testing"
     Given As an "admin"
     And app "testing" is enabled
     When sending "DELETE" to "/cloud/apps/testing"
     Then the OCS status code should be "100"
     And the HTTP status code should be "200"
     And app "testing" is disabled
+    Given invoking occ with "app:enable testing"
 
   Scenario: disable an user
     Given As an "admin"
@@ -757,7 +810,7 @@ Feature: provisioning
     Then the HTTP status code should be "200"
     And user "subadmin" is disabled
 
-  Scenario: Admin user cannot disable himself
+  Scenario: Admin user cannot disable themself
     Given As an "admin"
     And user "another-admin" exists
     And user "another-admin" belongs to group "admin"
@@ -768,7 +821,7 @@ Feature: provisioning
     And As an "admin"
     And user "another-admin" is enabled
 
-  Scenario:Admin user cannot enable himself
+  Scenario: Admin user cannot enable themself
     Given As an "admin"
     And user "another-admin" exists
     And user "another-admin" belongs to group "admin"
@@ -801,7 +854,7 @@ Feature: provisioning
     And As an "admin"
     And user "user2" is disabled
 
-  Scenario: Subadmin should not be able to disable himself
+  Scenario: Subadmin should not be able to disable themself
     Given As an "admin"
     And user "subadmin" exists
     And group "new-group" exists
@@ -814,7 +867,7 @@ Feature: provisioning
     And As an "admin"
     And user "subadmin" is enabled
 
-  Scenario: Subadmin should not be able to enable himself
+  Scenario: Subadmin should not be able to enable themself
     Given As an "admin"
     And user "subadmin" exists
     And group "new-group" exists

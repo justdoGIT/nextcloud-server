@@ -5,6 +5,7 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OC;
 
 use OCP\IConfig;
@@ -15,8 +16,9 @@ use OCP\IConfig;
  * fixes cyclic DI: AllConfig needs AppConfig needs Database needs AllConfig
  */
 class SystemConfig {
-	/** @var array */
-	protected $sensitiveValues = [
+	protected array $sensitiveValues;
+
+	protected const DEFAULT_SENSITIVE_VALUES = [
 		'instanceid' => true,
 		'datadirectory' => true,
 		'dbname' => true,
@@ -40,9 +42,12 @@ class SystemConfig {
 		'trusted_proxies' => true,
 		'preview_imaginary_url' => true,
 		'preview_imaginary_key' => true,
+		'preview_ffmpeg_address' => true,
+		'preview_ffmpeg_key' => true,
 		'proxyuserpwd' => true,
 		'sentry.dsn' => true,
 		'sentry.public-dsn' => true,
+		'sentry.csp-report-url' => true,
 		'zammad.download.secret' => true,
 		'zammad.portal.secret' => true,
 		'zammad.secret' => true,
@@ -73,6 +78,7 @@ class SystemConfig {
 				// S3
 				'key' => true,
 				'secret' => true,
+				'sse_c_key' => true,
 				// Swift v2
 				'username' => true,
 				'password' => true,
@@ -104,32 +110,19 @@ class SystemConfig {
 				],
 			],
 		],
+		'eurooffice' => [
+			'jwt_secret' => true,
+		],
 		'onlyoffice' => [
 			'jwt_secret' => true,
 		],
+		'PASS' => true,
 	];
 
 	public function __construct(
 		private Config $config,
 	) {
-	}
-
-	/**
-	 * Since system config is admin controlled, we can tell psalm to ignore any taint
-	 *
-	 * @psalm-taint-escape sql
-	 * @psalm-taint-escape html
-	 * @psalm-taint-escape ldap
-	 * @psalm-taint-escape callable
-	 * @psalm-taint-escape file
-	 * @psalm-taint-escape ssrf
-	 * @psalm-taint-escape cookie
-	 * @psalm-taint-escape header
-	 * @psalm-taint-escape has_quotes
-	 * @psalm-pure
-	 */
-	public static function trustSystemConfig(mixed $value): mixed {
-		return $value;
+		$this->sensitiveValues = array_merge(self::DEFAULT_SENSITIVE_VALUES, $this->config->getValue('config_extra_sensitive_values', []));
 	}
 
 	/**
@@ -168,7 +161,7 @@ class SystemConfig {
 	 * @return mixed the value or $default
 	 */
 	public function getValue($key, $default = '') {
-		return $this->trustSystemConfig($this->config->getValue($key, $default));
+		return $this->config->getValue($key, $default);
 	}
 
 	/**

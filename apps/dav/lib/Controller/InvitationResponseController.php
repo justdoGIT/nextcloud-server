@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2018 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Controller;
 
 use OCA\DAV\CalDAV\InvitationResponse\InvitationResponseServer;
@@ -23,15 +24,6 @@ use Sabre\VObject\Reader;
 #[OpenAPI(scope: OpenAPI::SCOPE_IGNORE)]
 class InvitationResponseController extends Controller {
 
-	/** @var IDBConnection */
-	private $db;
-
-	/** @var ITimeFactory */
-	private $timeFactory;
-
-	/** @var InvitationResponseServer */
-	private $responseServer;
-
 	/**
 	 * InvitationResponseController constructor.
 	 *
@@ -41,13 +33,14 @@ class InvitationResponseController extends Controller {
 	 * @param ITimeFactory $timeFactory
 	 * @param InvitationResponseServer $responseServer
 	 */
-	public function __construct(string $appName, IRequest $request,
-		IDBConnection $db, ITimeFactory $timeFactory,
-		InvitationResponseServer $responseServer) {
+	public function __construct(
+		string $appName,
+		IRequest $request,
+		private IDBConnection $db,
+		private ITimeFactory $timeFactory,
+		private InvitationResponseServer $responseServer,
+	) {
 		parent::__construct($appName, $request);
-		$this->db = $db;
-		$this->timeFactory = $timeFactory;
-		$this->responseServer = $responseServer;
 		// Don't run `$server->exec()`, because we just need access to the
 		// fully initialized schedule plugin, but we don't want Sabre/DAV
 		// to actually handle and reply to the request
@@ -123,6 +116,8 @@ class InvitationResponseController extends Controller {
 		$partstat = $this->request->getParam('partStat');
 
 		$row = $this->getTokenInformation($token);
+		// $partstat comes from IRequest::getParam(), which is untyped
+		/** @psalm-suppress UnrecognizedExpression */
 		if (!$row || !\in_array($partstat, ['ACCEPTED', 'DECLINED', 'TENTATIVE'])) {
 			return new TemplateResponse($this->appName, 'schedule-response-error', [], 'guest');
 		}
@@ -148,7 +143,7 @@ class InvitationResponseController extends Controller {
 			->from('calendar_invitations')
 			->where($query->expr()->eq('token', $query->createNamedParameter($token)));
 		$stmt = $query->executeQuery();
-		$row = $stmt->fetch(\PDO::FETCH_ASSOC);
+		$row = $stmt->fetchAssociative();
 		$stmt->closeCursor();
 
 		if (!$row) {

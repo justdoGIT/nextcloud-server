@@ -5,33 +5,40 @@
 
 <template>
 	<li class="sharing-entry">
-		<NcAvatar class="sharing-entry__avatar"
-			:is-no-user="share.type !== SHARE_TYPES.SHARE_TYPE_USER"
+		<NcAvatar
+			class="sharing-entry__avatar"
+			:is-no-user="share.type !== ShareType.User"
 			:user="share.shareWith"
 			:display-name="share.shareWithDisplayName"
-			:menu-position="'left'"
+			menu-position="left"
 			:url="share.shareWithAvatar" />
 
 		<div class="sharing-entry__summary">
-			<component :is="share.shareWithLink ? 'a' : 'div'"
+			<component
+				:is="share.shareWithLink ? 'a' : 'div'"
 				:title="tooltip"
 				:aria-label="tooltip"
 				:href="share.shareWithLink"
 				class="sharing-entry__summary__desc">
 				<span>{{ title }}
-					<span v-if="!isUnique" class="sharing-entry__summary__desc-unique"> ({{
-						share.shareWithDisplayNameUnique }})</span>
+					<span v-if="!isUnique" class="sharing-entry__summary__desc-unique">
+						({{ share.shareWithDisplayNameUnique }})
+					</span>
 					<small v-if="hasStatus && share.status.message">({{ share.status.message }})</small>
 				</span>
 			</component>
-			<SharingEntryQuickShareSelect :share="share"
+			<SharingEntryQuickShareSelect
+				:share="share"
 				:file-info="fileInfo"
 				@open-sharing-details="openShareDetailsForCustomSettings(share)" />
 		</div>
-		<NcButton class="sharing-entry__action"
+		<ShareExpiryTime v-if="share && share.expireDate" :share="share" />
+		<NcButton
+			v-if="share.canEdit"
+			class="sharing-entry__action"
 			data-cy-files-sharing-share-actions
 			:aria-label="t('files_sharing', 'Open Sharing Details')"
-			type="tertiary"
+			variant="tertiary"
 			@click="openSharingDetails(share)">
 			<template #icon>
 				<DotsHorizontalIcon :size="20" />
@@ -41,15 +48,15 @@
 </template>
 
 <script>
-import NcButton from '@nextcloud/vue/dist/Components/NcButton.js'
-import NcSelect from '@nextcloud/vue/dist/Components/NcSelect.js'
-import NcAvatar from '@nextcloud/vue/dist/Components/NcAvatar.js'
+import { ShareType } from '@nextcloud/sharing'
+import NcAvatar from '@nextcloud/vue/components/NcAvatar'
+import NcButton from '@nextcloud/vue/components/NcButton'
+import NcSelect from '@nextcloud/vue/components/NcSelect'
 import DotsHorizontalIcon from 'vue-material-design-icons/DotsHorizontal.vue'
-
+import ShareExpiryTime from './ShareExpiryTime.vue'
 import SharingEntryQuickShareSelect from './SharingEntryQuickShareSelect.vue'
-
-import SharesMixin from '../mixins/SharesMixin.js'
 import ShareDetails from '../mixins/ShareDetails.js'
+import SharesMixin from '../mixins/SharesMixin.js'
 
 export default {
 	name: 'SharingEntry',
@@ -59,6 +66,7 @@ export default {
 		NcAvatar,
 		DotsHorizontalIcon,
 		NcSelect,
+		ShareExpiryTime,
 		SharingEntryQuickShareSelect,
 	},
 
@@ -67,19 +75,29 @@ export default {
 	computed: {
 		title() {
 			let title = this.share.shareWithDisplayName
-			if (this.share.type === this.SHARE_TYPES.SHARE_TYPE_GROUP) {
+
+			const showAsInternal = this.config.showFederatedSharesAsInternal
+				|| (this.share.isTrustedServer && this.config.showFederatedSharesToTrustedServersAsInternal)
+
+			if (this.share.type === ShareType.Group || (this.share.type === ShareType.RemoteGroup && showAsInternal)) {
 				title += ` (${t('files_sharing', 'group')})`
-			} else if (this.share.type === this.SHARE_TYPES.SHARE_TYPE_ROOM) {
+			} else if (this.share.type === ShareType.Room) {
 				title += ` (${t('files_sharing', 'conversation')})`
-			} else if (this.share.type === this.SHARE_TYPES.SHARE_TYPE_REMOTE) {
+			} else if (this.share.type === ShareType.Remote && !showAsInternal) {
 				title += ` (${t('files_sharing', 'remote')})`
-			} else if (this.share.type === this.SHARE_TYPES.SHARE_TYPE_REMOTE_GROUP) {
+			} else if (this.share.type === ShareType.RemoteGroup) {
 				title += ` (${t('files_sharing', 'remote group')})`
-			} else if (this.share.type === this.SHARE_TYPES.SHARE_TYPE_GUEST) {
+			} else if (this.share.type === ShareType.Guest) {
 				title += ` (${t('files_sharing', 'guest')})`
+			}
+			if (!this.isShareOwner && this.share.ownerDisplayName) {
+				title += ' ' + t('files_sharing', 'by {initiator}', {
+					initiator: this.share.ownerDisplayName,
+				})
 			}
 			return title
 		},
+
 		tooltip() {
 			if (this.share.owner !== this.share.uidFileOwner) {
 				const data = {
@@ -88,9 +106,9 @@ export default {
 					user: this.share.shareWithDisplayName,
 					owner: this.share.ownerDisplayName,
 				}
-				if (this.share.type === this.SHARE_TYPES.SHARE_TYPE_GROUP) {
+				if (this.share.type === ShareType.Group) {
 					return t('files_sharing', 'Shared with the group {user} by {owner}', data)
-				} else if (this.share.type === this.SHARE_TYPES.SHARE_TYPE_ROOM) {
+				} else if (this.share.type === ShareType.Room) {
 					return t('files_sharing', 'Shared with the conversation {user} by {owner}', data)
 				}
 
@@ -103,20 +121,11 @@ export default {
 		 * @return {boolean}
 		 */
 		hasStatus() {
-			if (this.share.type !== this.SHARE_TYPES.SHARE_TYPE_USER) {
+			if (this.share.type !== ShareType.User) {
 				return false
 			}
 
 			return (typeof this.share.status === 'object' && !Array.isArray(this.share.status))
-		},
-	},
-
-	methods: {
-		/**
-		 * Save potential changed data on menu close
-		 */
-		onMenuClose() {
-			this.onNoteSubmit()
 		},
 	},
 }

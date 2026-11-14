@@ -1,60 +1,68 @@
 <?php
 
+declare(strict_types=1);
+
 /**
  * SPDX-FileCopyrightText: 2016-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OC;
 
 use bantu\IniGetWrapper\IniGetWrapper;
+use OC\App\AppStore\AppStoreLinkVisibility;
 use OC\AppFramework\Http\Request;
 use OC\Authentication\Token\IProvider;
+use OC\Core\AppInfo\Application;
+use OC\Core\AppInfo\ConfigLexicon;
 use OC\Files\FilenameValidator;
-use OC\Search\SearchQuery;
+use OC\Security\CSP\ContentSecurityPolicyNonceManager;
 use OC\Template\CSSResourceLocator;
 use OC\Template\JSConfigHelper;
 use OC\Template\JSResourceLocator;
+use OCA\Theming\Service\ThemesService;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\Defaults;
+use OCP\IAppConfig;
 use OCP\IConfig;
+use OCP\IGroupManager;
 use OCP\IInitialStateService;
 use OCP\INavigationManager;
 use OCP\IRequest;
+use OCP\ISession;
 use OCP\IURLGenerator;
 use OCP\IUserSession;
 use OCP\L10N\IFactory;
+use OCP\Server;
 use OCP\ServerVersion;
 use OCP\Support\Subscription\IRegistry;
+use OCP\Template\ITemplate;
+use OCP\Template\ITemplateManager;
 use OCP\Util;
 
-class TemplateLayout extends \OC_Template {
-	private static $versionHash = '';
+class TemplateLayout {
+	private string $versionHash = '';
 	/** @var string[] */
-	private static $cacheBusterCache = [];
+	private array $cacheBusterCache = [];
 
-	/** @var CSSResourceLocator|null */
-	public static $cssLocator = null;
+	public ?CSSResourceLocator $cssLocator = null;
+	public ?JSResourceLocator $jsLocator = null;
 
-	/** @var JSResourceLocator|null */
-	public static $jsLocator = null;
+	public function __construct(
+		private IConfig $config,
+		private readonly IAppConfig $appConfig,
+		private IAppManager $appManager,
+		private InitialStateService $initialState,
+		private INavigationManager $navigationManager,
+		private ITemplateManager $templateManager,
+		private ServerVersion $serverVersion,
+		private IRequest $request,
+	) {
+	}
 
-	private IConfig $config;
-	private IAppManager $appManager;
-	private InitialStateService $initialState;
-	private INavigationManager $navigationManager;
-
-	/**
-	 * @param string $renderAs
-	 * @param string $appId application id
-	 */
-	public function __construct($renderAs, $appId = '') {
-		$this->config = \OCP\Server::get(IConfig::class);
-		$this->appManager = \OCP\Server::get(IAppManager::class);
-		$this->initialState = \OCP\Server::get(InitialStateService::class);
-		$this->navigationManager = \OCP\Server::get(INavigationManager::class);
-
+	public function getPageTemplate(string $renderAs, string $appId): ITemplate {
 		// Add fallback theming variables if not rendered as user
 		if ($renderAs !== TemplateResponse::RENDER_AS_USER) {
 			// TODO cache generated default theme if enabled for fallback if server is erroring ?
@@ -62,246 +70,252 @@ class TemplateLayout extends \OC_Template {
 		}
 
 		// Decide which page we show
-		if ($renderAs === TemplateResponse::RENDER_AS_USER) {
-			parent::__construct('core', 'layout.user');
-			if (in_array(\OC_App::getCurrentApp(), ['settings','admin', 'help']) !== false) {
-				$this->assign('bodyid', 'body-settings');
-			} else {
-				$this->assign('bodyid', 'body-user');
-			}
+		switch ($renderAs) {
+			case TemplateResponse::RENDER_AS_USER:
+				$page = $this->templateManager->getTemplate('core', 'layout.user');
+				$pathInfo = $this->request->getPathInfo();
+				if ($pathInfo !== false && str_starts_with($pathInfo, '/settings/')) {
+					$page->assign('bodyid', 'body-settings');
+				} else {
+					$page->assign('bodyid', 'body-user');
+				}
 
-			$this->initialState->provideInitialState('core', 'active-app', $this->navigationManager->getActiveEntry());
-			$this->initialState->provideInitialState('core', 'apps', array_values($this->navigationManager->getAll()));
+				$this->initialState->provideInitialState('core', 'active-app', $this->navigationManager->getActiveEntry());
+				$this->initialState->provideInitialState('core', 'apps', array_values($this->navigationManager->getAll()));
+				$this->initialState->provideInitialState('core', 'navigationActions', array_values($this->navigationManager->getAll(INavigationManager::TYPE_ACTION)));
+				$this->initialState->provideInitialState('core', 'appStoreLinkShown', Server::get(AppStoreLinkVisibility::class)->isShownToUsers());
 
-			if ($this->config->getSystemValueBool('unified_search.enabled', false) || !$this->config->getSystemValueBool('enable_non-accessible_features', true)) {
-				$this->initialState->provideInitialState('unified-search', 'limit-default', (int)$this->config->getAppValue('core', 'unified-search.limit-default', (string)SearchQuery::LIMIT_DEFAULT));
-				$this->initialState->provideInitialState('unified-search', 'min-search-length', (int)$this->config->getAppValue('core', 'unified-search.min-search-length', (string)1));
-				$this->initialState->provideInitialState('unified-search', 'live-search', $this->config->getAppValue('core', 'unified-search.live-search', 'yes') === 'yes');
-				Util::addScript('core', 'legacy-unified-search', 'core');
-			} else {
+				$this->initialState->provideInitialState('unified-search', 'min-search-length', $this->appConfig->getValueInt(Application::APP_ID, ConfigLexicon::UNIFIED_SEARCH_MIN_SEARCH_LENGTH));
 				Util::addScript('core', 'unified-search', 'core');
-			}
-			// Set body data-theme
-			$this->assign('enabledThemes', []);
-			if ($this->appManager->isEnabledForUser('theming') && class_exists('\OCA\Theming\Service\ThemesService')) {
-				/** @var \OCA\Theming\Service\ThemesService */
-				$themesService = \OC::$server->get(\OCA\Theming\Service\ThemesService::class);
-				$this->assign('enabledThemes', $themesService->getEnabledThemes());
-			}
+				Util::addStyle('core', 'unified-search');
 
-			// Set logo link target
-			$logoUrl = $this->config->getSystemValueString('logo_url', '');
-			$this->assign('logoUrl', $logoUrl);
+				Util::addScript('core', 'appmenu', 'core');
+				Util::addStyle('core', 'appmenu');
 
-			// Set default entry name
-			$defaultEntryId = $this->navigationManager->getDefaultEntryIdForUser();
-			$defaultEntry = $this->navigationManager->get($defaultEntryId);
-			$this->assign('defaultAppName', $defaultEntry['name']);
+				// Set logo link target
+				$logoUrl = $this->config->getSystemValueString('logo_url', '');
+				$page->assign('logoUrl', $logoUrl);
 
-			// Add navigation entry
-			$this->assign('application', '');
-			$this->assign('appid', $appId);
+				// Set default entry name
+				$defaultEntryId = $this->navigationManager->getDefaultEntryIdForUser();
+				$defaultEntry = $this->navigationManager->get($defaultEntryId);
+				$page->assign('defaultAppName', $defaultEntry['name'] ?? '');
 
-			$navigation = $this->navigationManager->getAll();
-			$this->assign('navigation', $navigation);
-			$settingsNavigation = $this->navigationManager->getAll('settings');
-			$this->initialState->provideInitialState('core', 'settingsNavEntries', $settingsNavigation);
+				// Add navigation entry
+				$page->assign('application', '');
+				$page->assign('appid', $appId);
 
-			foreach ($navigation as $entry) {
-				if ($entry['active']) {
-					$this->assign('application', $entry['name']);
-					break;
+				$navigation = $this->navigationManager->getAll();
+				$page->assign('navigation', $navigation);
+				$settingsNavigation = $this->navigationManager->getAll('settings');
+				$this->initialState->provideInitialState('core', 'settingsNavEntries', $settingsNavigation);
+
+				foreach ($navigation as $entry) {
+					if ($entry['active']) {
+						$page->assign('application', $entry['name']);
+						break;
+					}
 				}
-			}
 
-			foreach ($settingsNavigation as $entry) {
-				if ($entry['active']) {
-					$this->assign('application', $entry['name']);
-					break;
+				foreach ($settingsNavigation as $entry) {
+					if ($entry['active']) {
+						$page->assign('application', $entry['name']);
+						break;
+					}
 				}
-			}
 
-			$userDisplayName = false;
-			$user = \OC::$server->get(IUserSession::class)->getUser();
-			if ($user) {
-				$userDisplayName = $user->getDisplayName();
-			}
-			$this->assign('user_displayname', $userDisplayName);
-			$this->assign('user_uid', \OC_User::getUser());
+				$user = Server::get(IUserSession::class)->getUser();
 
-			if ($user === null) {
-				$this->assign('userAvatarSet', false);
-				$this->assign('userStatus', false);
-			} else {
-				$this->assign('userAvatarSet', true);
-				$this->assign('userAvatarVersion', $this->config->getUserValue(\OC_User::getUser(), 'avatar', 'version', 0));
-			}
-		} elseif ($renderAs === TemplateResponse::RENDER_AS_ERROR) {
-			parent::__construct('core', 'layout.guest', '', false);
-			$this->assign('bodyid', 'body-login');
-			$this->assign('user_displayname', '');
-			$this->assign('user_uid', '');
-		} elseif ($renderAs === TemplateResponse::RENDER_AS_GUEST) {
-			parent::__construct('core', 'layout.guest');
-			\OC_Util::addStyle('guest');
-			$this->assign('bodyid', 'body-login');
+				if ($user === null) {
+					$page->assign('user_uid', false);
+					$page->assign('user_displayname', false);
+					$page->assign('userAvatarSet', false);
+					$page->assign('userStatus', false);
+				} else {
+					$page->assign('user_uid', $user->getUID());
+					$page->assign('user_displayname', $user->getDisplayName());
+					$page->assign('userAvatarSet', true);
+					$page->assign('userAvatarVersion', $this->config->getUserValue($user->getUID(), 'avatar', 'version', 0));
+				}
+				break;
+			case TemplateResponse::RENDER_AS_ERROR:
+				$page = $this->templateManager->getTemplate('core', 'layout.guest', '', false);
+				$page->assign('bodyid', 'body-login');
+				$page->assign('user_displayname', '');
+				$page->assign('user_uid', '');
+				break;
+			case TemplateResponse::RENDER_AS_GUEST:
+				$page = $this->templateManager->getTemplate('core', 'layout.guest');
+				Util::addStyle('guest');
+				$page->assign('bodyid', 'body-login');
 
-			$userDisplayName = false;
-			$user = \OC::$server->get(IUserSession::class)->getUser();
-			if ($user) {
-				$userDisplayName = $user->getDisplayName();
-			}
-			$this->assign('user_displayname', $userDisplayName);
-			$this->assign('user_uid', \OC_User::getUser());
-		} elseif ($renderAs === TemplateResponse::RENDER_AS_PUBLIC) {
-			parent::__construct('core', 'layout.public');
-			$this->assign('appid', $appId);
-			$this->assign('bodyid', 'body-public');
+				$userDisplayName = false;
+				$user = Server::get(IUserSession::class)->getUser();
+				if ($user) {
+					$userDisplayName = $user->getDisplayName();
+				}
 
-			// Set logo link target
-			$logoUrl = $this->config->getSystemValueString('logo_url', '');
-			$this->assign('logoUrl', $logoUrl);
+				$page->assign('user_displayname', $userDisplayName);
+				$page->assign('user_uid', $user?->getUID() ?? false);
+				break;
+			case TemplateResponse::RENDER_AS_PUBLIC:
+				$page = $this->templateManager->getTemplate('core', 'layout.public');
+				$page->assign('appid', $appId);
+				$page->assign('bodyid', 'body-public');
 
-			/** @var IRegistry $subscription */
-			$subscription = \OCP\Server::get(IRegistry::class);
-			$showSimpleSignup = $this->config->getSystemValueBool('simpleSignUpLink.shown', true);
-			if ($showSimpleSignup && $subscription->delegateHasValidSubscription()) {
-				$showSimpleSignup = false;
-			}
+				$currentAppData = $this->navigationManager->get($appId);
+				$this->initialState->provideInitialState('core', 'apps', $currentAppData === null ? [] : [$currentAppData]);
 
-			$defaultSignUpLink = 'https://nextcloud.com/signup/';
-			$signUpLink = $this->config->getSystemValueString('registration_link', $defaultSignUpLink);
-			if ($signUpLink !== $defaultSignUpLink) {
-				$showSimpleSignup = true;
-			}
+				// Set logo link target
+				$logoUrl = $this->config->getSystemValueString('logo_url', '');
+				$page->assign('logoUrl', $logoUrl);
 
-			if ($this->appManager->isEnabledForUser('registration')) {
-				$urlGenerator = \OCP\Server::get(IURLGenerator::class);
-				$signUpLink = $urlGenerator->getAbsoluteURL('/index.php/apps/registration/');
-			}
+				$subscription = Server::get(IRegistry::class);
+				$showSimpleSignup = $this->config->getSystemValueBool('simpleSignUpLink.shown', true);
+				if ($showSimpleSignup && $subscription->delegateHasValidSubscription()) {
+					$showSimpleSignup = false;
+				}
 
-			$this->assign('showSimpleSignUpLink', $showSimpleSignup);
-			$this->assign('signUpLink', $signUpLink);
-		} else {
-			parent::__construct('core', 'layout.base');
+				$defaultSignUpLink = 'https://nextcloud.com/signup/';
+				$signUpLink = $this->config->getSystemValueString('registration_link', $defaultSignUpLink);
+				if ($signUpLink !== $defaultSignUpLink) {
+					$showSimpleSignup = true;
+				}
+
+				if ($this->appManager->isEnabledForUser('registration')) {
+					$urlGenerator = Server::get(IURLGenerator::class);
+					$signUpLink = $urlGenerator->getAbsoluteURL('/index.php/apps/registration/');
+				}
+
+				$page->assign('showSimpleSignUpLink', $showSimpleSignup);
+				$page->assign('signUpLink', $signUpLink);
+				break;
+			default:
+				$page = $this->templateManager->getTemplate('core', 'layout.base');
+				break;
 		}
 		// Send the language, locale, and direction to our layouts
-		$lang = \OC::$server->get(IFactory::class)->findLanguage();
-		$locale = \OC::$server->get(IFactory::class)->findLocale($lang);
-		$direction = \OC::$server->getL10NFactory()->getLanguageDirection($lang);
+		$l10nFactory = Server::get(IFactory::class);
+		$lang = $l10nFactory->findLanguage();
+		$locale = $l10nFactory->findLocale($lang);
+		$direction = $l10nFactory->getLanguageDirection($lang);
 
 		$lang = str_replace('_', '-', $lang);
-		$this->assign('language', $lang);
-		$this->assign('locale', $locale);
-		$this->assign('direction', $direction);
+		$page->assign('language', $lang);
+		$page->assign('locale', $locale);
+		$page->assign('direction', $direction);
+
+		// Set body data-theme
+		try {
+			$themesService = Server::get(ThemesService::class);
+		} catch (\Exception) {
+			$themesService = null;
+		}
+		$page->assign('enabledThemes', $themesService?->getEnabledThemes() ?? []);
 
 		if ($this->config->getSystemValueBool('installed', false)) {
-			if (empty(self::$versionHash)) {
-				$v = \OC_App::getAppVersions();
-				$v['core'] = implode('.', \OCP\Util::getVersion());
-				self::$versionHash = substr(md5(implode(',', $v)), 0, 8);
+			if (empty($this->versionHash)) {
+				$v = $this->appManager->getAppInstalledVersions(true);
+				$v['core'] = implode('.', $this->serverVersion->getVersion());
+				$this->versionHash = substr(md5(implode(',', $v)), 0, 8);
 			}
 		} else {
-			self::$versionHash = md5('not installed');
+			$this->versionHash = md5('not installed');
 		}
 
 		// Add the js files
-		// TODO: remove deprecated OC_Util injection
-		$jsFiles = self::findJavascriptFiles(array_merge(\OC_Util::$scripts, Util::getScripts()));
-		$this->assign('jsfiles', []);
-		if ($this->config->getSystemValueBool('installed', false) && $renderAs != TemplateResponse::RENDER_AS_ERROR) {
+		$jsFiles = $this->findJavascriptFiles(Util::getScripts());
+		$page->assign('jsfiles', []);
+		if ($this->config->getSystemValueBool('installed', false) && $renderAs !== TemplateResponse::RENDER_AS_ERROR) {
 			// this is on purpose outside of the if statement below so that the initial state is prefilled (done in the getConfig() call)
 			// see https://github.com/nextcloud/server/pull/22636 for details
 			$jsConfigHelper = new JSConfigHelper(
-				\OCP\Server::get(ServerVersion::class),
-				\OCP\Util::getL10N('lib'),
-				\OCP\Server::get(Defaults::class),
+				$this->serverVersion,
+				Util::getL10N('lib'),
+				Server::get(Defaults::class),
 				$this->appManager,
-				\OC::$server->getSession(),
-				\OC::$server->getUserSession()->getUser(),
+				Server::get(ISession::class),
+				Server::get(IUserSession::class)->getUser(),
 				$this->config,
-				\OC::$server->getGroupManager(),
-				\OC::$server->get(IniGetWrapper::class),
-				\OC::$server->getURLGenerator(),
-				\OC::$server->get(CapabilitiesManager::class),
-				\OCP\Server::get(IInitialStateService::class),
-				\OCP\Server::get(IProvider::class),
-				\OCP\Server::get(FilenameValidator::class),
+				$this->appConfig,
+				Server::get(IGroupManager::class),
+				Server::get(IniGetWrapper::class),
+				Server::get(IURLGenerator::class),
+				Server::get(CapabilitiesManager::class),
+				Server::get(IInitialStateService::class),
+				Server::get(IProvider::class),
+				Server::get(FilenameValidator::class),
 			);
 			$config = $jsConfigHelper->getConfig();
-			if (\OC::$server->getContentSecurityPolicyNonceManager()->browserSupportsCspV3()) {
-				$this->assign('inline_ocjs', $config);
+			if (Server::get(ContentSecurityPolicyNonceManager::class)->browserSupportsCspV3()) {
+				$page->assign('inline_ocjs', $config);
 			} else {
-				$this->append('jsfiles', \OC::$server->getURLGenerator()->linkToRoute('core.OCJS.getConfig', ['v' => self::$versionHash]));
+				$page->append('jsfiles', Server::get(IURLGenerator::class)->linkToRoute('core.OCJS.getConfig', ['v' => $this->versionHash]));
 			}
 		}
 		foreach ($jsFiles as $info) {
 			$web = $info[1];
 			$file = $info[2];
-			$this->append('jsfiles', $web . '/' . $file . $this->getVersionHashSuffix());
+			$page->append('jsfiles', $web . '/' . $file . $this->getVersionHashSuffix());
 		}
 
 		try {
-			$pathInfo = \OC::$server->getRequest()->getPathInfo();
+			$pathInfo = $this->request->getPathInfo();
 		} catch (\Exception $e) {
 			$pathInfo = '';
 		}
 
 		// Do not initialise scss appdata until we have a fully installed instance
 		// Do not load scss for update, errors, installation or login page
-		if (\OC::$server->getSystemConfig()->getValue('installed', false)
-			&& !\OCP\Util::needUpgrade()
+		if ($this->config->getSystemValueBool('installed', false)
+			&& !Util::needUpgrade()
 			&& $pathInfo !== ''
 			&& !preg_match('/^\/login/', $pathInfo)
 			&& $renderAs !== TemplateResponse::RENDER_AS_ERROR
 		) {
-			$cssFiles = self::findStylesheetFiles(\OC_Util::$styles);
+			$cssFiles = $this->findStylesheetFiles(\OC_Util::$styles);
 		} else {
 			// If we ignore the scss compiler,
 			// we need to load the guest css fallback
-			\OC_Util::addStyle('guest');
-			$cssFiles = self::findStylesheetFiles(\OC_Util::$styles, false);
+			Util::addStyle('guest');
+			$cssFiles = $this->findStylesheetFiles(\OC_Util::$styles);
 		}
 
-		$this->assign('cssfiles', []);
-		$this->assign('printcssfiles', []);
-		$this->initialState->provideInitialState('core', 'versionHash', self::$versionHash);
+		$page->assign('cssfiles', []);
+		$page->assign('printcssfiles', []);
+		$this->initialState->provideInitialState('core', 'versionHash', $this->versionHash);
 		foreach ($cssFiles as $info) {
 			$web = $info[1];
 			$file = $info[2];
 
 			if (str_ends_with($file, 'print.css')) {
-				$this->append('printcssfiles', $web . '/' . $file . $this->getVersionHashSuffix());
+				$page->append('printcssfiles', $web . '/' . $file . $this->getVersionHashSuffix());
 			} else {
 				$suffix = $this->getVersionHashSuffix($web, $file);
 
 				if (!str_contains($file, '?v=')) {
-					$this->append('cssfiles', $web . '/' . $file . $suffix);
+					$page->append('cssfiles', $web . '/' . $file . $suffix);
 				} else {
-					$this->append('cssfiles', $web . '/' . $file . '-' . substr($suffix, 3));
+					$page->append('cssfiles', $web . '/' . $file . '-' . substr($suffix, 3));
 				}
 			}
 		}
 
-		$request = \OCP\Server::get(IRequest::class);
-		if ($request->isUserAgent([Request::USER_AGENT_CLIENT_IOS, Request::USER_AGENT_SAFARI, Request::USER_AGENT_SAFARI_MOBILE])) {
+		if ($this->request->isUserAgent([Request::USER_AGENT_CLIENT_IOS, Request::USER_AGENT_SAFARI, Request::USER_AGENT_SAFARI_MOBILE])) {
 			// Prevent auto zoom with iOS but still allow user zoom
 			// On chrome (and others) this does not work (will also disable user zoom)
-			$this->assign('viewport_maximum_scale', '1.0');
+			$page->assign('viewport_maximum_scale', '1.0');
 		}
 
-		$this->assign('initialStates', $this->initialState->getInitialStates());
+		$page->assign('initialStates', $this->initialState->getInitialStates());
 
-		$this->assign('id-app-content', $renderAs === TemplateResponse::RENDER_AS_USER ? '#app-content' : '#content');
-		$this->assign('id-app-navigation', $renderAs === TemplateResponse::RENDER_AS_USER ? '#app-navigation' : null);
+		$page->assign('id-app-content', $renderAs === TemplateResponse::RENDER_AS_USER ? '#app-content' : '#content');
+		$page->assign('id-app-navigation', $renderAs === TemplateResponse::RENDER_AS_USER ? '#app-navigation' : null);
+
+		return $page;
 	}
 
-	/**
-	 * @param string $path
-	 * @param string $file
-	 * @return string
-	 */
-	protected function getVersionHashSuffix($path = false, $file = false) {
+	protected function getVersionHashSuffix(string $path = '', string $file = ''): string {
 		if ($this->config->getSystemValueBool('debug', false)) {
 			// allows chrome workspace mapping in debug mode
 			return '';
@@ -309,21 +323,21 @@ class TemplateLayout extends \OC_Template {
 
 		if ($this->config->getSystemValueBool('installed', false) === false) {
 			// if not installed just return the version hash
-			return '?v=' . self::$versionHash;
+			return '?v=' . $this->versionHash;
 		}
 
 		$hash = false;
 		// Try the web-root first
-		if (is_string($path) && $path !== '') {
+		if ($path !== '') {
 			$hash = $this->getVersionHashByPath($path);
 		}
 		// If not found try the file
-		if ($hash === false && is_string($file) && $file !== '') {
+		if ($hash === false && $file !== '') {
 			$hash = $this->getVersionHashByPath($file);
 		}
 		// As a last resort we use the server version hash
 		if ($hash === false) {
-			$hash = self::$versionHash;
+			$hash = $this->versionHash;
 		}
 
 		// The theming app is force-enabled thus the cache buster is always available
@@ -333,65 +347,63 @@ class TemplateLayout extends \OC_Template {
 	}
 
 	private function getVersionHashByPath(string $path): string|false {
-		if (array_key_exists($path, self::$cacheBusterCache) === false) {
+		if (array_key_exists($path, $this->cacheBusterCache) === false) {
 			// Not yet cached, so lets find the cache buster string
 			$appId = $this->getAppNamefromPath($path);
-			if ($appId === false || $appId === null) {
+			if ($appId === false) {
 				// No app Id could be guessed
 				return false;
 			}
 
-			$appVersion = $this->appManager->getAppVersion($appId);
-			// For shipped apps the app version is not a single source of truth, we rather also need to consider the Nextcloud version
-			if ($this->appManager->isShipped($appId)) {
-				$appVersion .= '-' . self::$versionHash;
+			if ($appId === 'core') {
+				// core is not a real app but the server itself
+				$hash = $this->versionHash;
+			} else {
+				$appVersion = $this->appManager->getAppVersion($appId);
+				// For shipped apps the app version is not a single source of truth, we rather also need to consider the Nextcloud version
+				if ($this->appManager->isShipped($appId)) {
+					$appVersion .= '-' . $this->versionHash;
+				}
+
+				$hash = substr(md5($appVersion), 0, 8);
 			}
-
-			$hash = substr(md5($appVersion), 0, 8);
-			self::$cacheBusterCache[$path] = $hash;
+			$this->cacheBusterCache[$path] = $hash;
 		}
 
-		return self::$cacheBusterCache[$path];
+		return $this->cacheBusterCache[$path];
 	}
 
-	/**
-	 * @param array $styles
-	 * @return array
-	 */
-	public static function findStylesheetFiles($styles, $compileScss = true) {
-		if (!self::$cssLocator) {
-			self::$cssLocator = \OCP\Server::get(CSSResourceLocator::class);
+	private function findStylesheetFiles(array $styles): array {
+		if ($this->cssLocator === null) {
+			$this->cssLocator = Server::get(CSSResourceLocator::class);
 		}
-		self::$cssLocator->find($styles);
-		return self::$cssLocator->getResources();
+		$this->cssLocator->find($styles);
+		return $this->cssLocator->getResources();
 	}
 
-	/**
-	 * @param string $path
-	 * @return string|boolean
-	 */
-	public function getAppNamefromPath($path) {
-		if ($path !== '' && is_string($path)) {
+	public function getAppNamefromPath(string $path): string|false {
+		if ($path !== '') {
 			$pathParts = explode('/', $path);
-			if ($pathParts[0] === 'css') {
+			if ($pathParts[0] === 'dist') {
+				// Return the part before the dash in the file name
+				return explode('-', \end($pathParts), 2)[0];
+			} elseif ($pathParts[0] === 'css') {
 				// This is a scss request
 				return $pathParts[1];
+			} elseif ($pathParts[0] === 'core') {
+				return 'core';
 			}
 			return end($pathParts);
 		}
 		return false;
 	}
 
-	/**
-	 * @param array $scripts
-	 * @return array
-	 */
-	public static function findJavascriptFiles($scripts) {
-		if (!self::$jsLocator) {
-			self::$jsLocator = \OCP\Server::get(JSResourceLocator::class);
+	private function findJavascriptFiles(array $scripts): array {
+		if ($this->jsLocator === null) {
+			$this->jsLocator = Server::get(JSResourceLocator::class);
 		}
-		self::$jsLocator->find($scripts);
-		return self::$jsLocator->getResources();
+		$this->jsLocator->find($scripts);
+		return $this->jsLocator->getResources();
 	}
 
 	/**
@@ -400,7 +412,7 @@ class TemplateLayout extends \OC_Template {
 	 * @return string Relative path
 	 * @throws \Exception If $filePath is not under \OC::$SERVERROOT
 	 */
-	public static function convertToRelativePath($filePath) {
+	public static function convertToRelativePath(string $filePath) {
 		$relativePath = explode(\OC::$SERVERROOT, $filePath);
 		if (count($relativePath) !== 2) {
 			throw new \Exception('$filePath is not under the \OC::$SERVERROOT');

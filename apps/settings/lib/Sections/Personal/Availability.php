@@ -15,29 +15,28 @@ use OCP\Settings\IIconSection;
 
 class Availability implements IIconSection {
 
-	/** @var IL10N */
-	private $l;
-
-	/** @var IURLGenerator */
-	private $urlGenerator;
-
-	public function __construct(IL10N $l, IURLGenerator $urlGenerator) {
-		$this->l = $l;
-		$this->urlGenerator = $urlGenerator;
+	public function __construct(
+		private IL10N $l,
+		private IURLGenerator $urlGenerator,
+	) {
 	}
 
+	#[\Override]
 	public function getIcon(): string {
 		return $this->urlGenerator->imagePath('dav', 'schedule.svg');
 	}
 
+	#[\Override]
 	public function getID(): string {
 		return 'availability';
 	}
 
+	#[\Override]
 	public function getName(): string {
 		return $this->l->t('Availability');
 	}
 
+	#[\Override]
 	public function getPriority(): int {
 		return 50;
 	}

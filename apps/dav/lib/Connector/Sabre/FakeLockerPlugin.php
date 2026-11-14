@@ -5,11 +5,14 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\Connector\Sabre;
 
+use OCP\AppFramework\Http;
 use Sabre\DAV\INode;
 use Sabre\DAV\Locks\LockInfo;
 use Sabre\DAV\PropFind;
+use Sabre\DAV\Server;
 use Sabre\DAV\ServerPlugin;
 use Sabre\DAV\Xml\Property\LockDiscovery;
 use Sabre\DAV\Xml\Property\SupportedLock;
@@ -29,11 +32,12 @@ use Sabre\HTTP\ResponseInterface;
  * @package OCA\DAV\Connector\Sabre
  */
 class FakeLockerPlugin extends ServerPlugin {
-	/** @var \Sabre\DAV\Server */
+	/** @var Server */
 	private $server;
 
 	/** {@inheritDoc} */
-	public function initialize(\Sabre\DAV\Server $server) {
+	#[\Override]
+	public function initialize(Server $server) {
 		$this->server = $server;
 		$this->server->on('method:LOCK', [$this, 'fakeLockProvider'], 1);
 		$this->server->on('method:UNLOCK', [$this, 'fakeUnlockProvider'], 1);
@@ -47,6 +51,7 @@ class FakeLockerPlugin extends ServerPlugin {
 	 * @param string $path
 	 * @return string[]
 	 */
+	#[\Override]
 	public function getHTTPMethods($path) {
 		return [
 			'LOCK',
@@ -59,6 +64,7 @@ class FakeLockerPlugin extends ServerPlugin {
 	 *
 	 * @return integer[]
 	 */
+	#[\Override]
 	public function getFeatures() {
 		return [2];
 	}
@@ -111,15 +117,15 @@ class FakeLockerPlugin extends ServerPlugin {
 		$lockInfo = new LockInfo();
 		$lockInfo->token = md5($request->getPath());
 		$lockInfo->uri = $request->getPath();
-		$lockInfo->depth = \Sabre\DAV\Server::DEPTH_INFINITY;
+		$lockInfo->depth = Server::DEPTH_INFINITY;
 		$lockInfo->timeout = 1800;
 
 		$body = $this->server->xml->write('{DAV:}prop', [
-			'{DAV:}lockdiscovery' =>
-					new LockDiscovery([$lockInfo])
+			'{DAV:}lockdiscovery'
+					=> new LockDiscovery([$lockInfo])
 		]);
 
-		$response->setStatus(200);
+		$response->setStatus(Http::STATUS_OK);
 		$response->setBody($body);
 
 		return false;
@@ -134,7 +140,7 @@ class FakeLockerPlugin extends ServerPlugin {
 	 */
 	public function fakeUnlockProvider(RequestInterface $request,
 		ResponseInterface $response) {
-		$response->setStatus(204);
+		$response->setStatus(Http::STATUS_NO_CONTENT);
 		$response->setHeader('Content-Length', '0');
 		return false;
 	}

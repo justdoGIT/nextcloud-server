@@ -1,9 +1,11 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2017-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Testing\Controller;
 
 use OCP\AppFramework\Http\DataResponse;
@@ -13,19 +15,17 @@ use OCP\IRequest;
 
 class ConfigController extends OCSController {
 
-	/** @var IConfig */
-	private $config;
-
 	/**
 	 * @param string $appName
 	 * @param IRequest $request
 	 * @param IConfig $config
 	 */
-	public function __construct($appName,
+	public function __construct(
+		$appName,
 		IRequest $request,
-		IConfig $config) {
+		private IConfig $config,
+	) {
 		parent::__construct($appName, $request);
-		$this->config = $config;
 	}
 
 	/**

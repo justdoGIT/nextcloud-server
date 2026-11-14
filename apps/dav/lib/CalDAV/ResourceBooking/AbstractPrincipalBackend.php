@@ -1,8 +1,10 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2019 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\CalDAV\ResourceBooking;
 
 use OCA\DAV\CalDAV\Proxy\ProxyMapper;
@@ -25,23 +27,6 @@ use function array_values;
 
 abstract class AbstractPrincipalBackend implements BackendInterface {
 
-	/** @var IDBConnection */
-	private $db;
-
-	/** @var IUserSession */
-	private $userSession;
-
-	/** @var IGroupManager */
-	private $groupManager;
-
-	private LoggerInterface $logger;
-
-	/** @var ProxyMapper */
-	private $proxyMapper;
-
-	/** @var string */
-	private $principalPrefix;
-
 	/** @var string */
 	private $dbTableName;
 
@@ -51,27 +36,19 @@ abstract class AbstractPrincipalBackend implements BackendInterface {
 	/** @var string */
 	private $dbForeignKeyName;
 
-	/** @var string */
-	private $cuType;
-
-	public function __construct(IDBConnection $dbConnection,
-		IUserSession $userSession,
-		IGroupManager $groupManager,
-		LoggerInterface $logger,
-		ProxyMapper $proxyMapper,
-		string $principalPrefix,
+	public function __construct(
+		private IDBConnection $db,
+		private IUserSession $userSession,
+		private IGroupManager $groupManager,
+		private LoggerInterface $logger,
+		private ProxyMapper $proxyMapper,
+		private string $principalPrefix,
 		string $dbPrefix,
-		string $cuType) {
-		$this->db = $dbConnection;
-		$this->userSession = $userSession;
-		$this->groupManager = $groupManager;
-		$this->logger = $logger;
-		$this->proxyMapper = $proxyMapper;
-		$this->principalPrefix = $principalPrefix;
+		private string $cuType,
+	) {
 		$this->dbTableName = 'calendar_' . $dbPrefix . 's';
 		$this->dbMetaDataTableName = $this->dbTableName . '_md';
 		$this->dbForeignKeyName = $dbPrefix . '_id';
-		$this->cuType = $cuType;
 	}
 
 	use PrincipalProxyTrait;
@@ -89,6 +66,7 @@ abstract class AbstractPrincipalBackend implements BackendInterface {
 	 * @param string $prefixPath
 	 * @return string[]
 	 */
+	#[\Override]
 	public function getPrincipalsByPrefix($prefixPath): array {
 		$principals = [];
 
@@ -96,13 +74,13 @@ abstract class AbstractPrincipalBackend implements BackendInterface {
 			$query = $this->db->getQueryBuilder();
 			$query->select(['id', 'backend_id', 'resource_id', 'email', 'displayname'])
 				->from($this->dbTableName);
-			$stmt = $query->execute();
+			$stmt = $query->executeQuery();
 
 			$metaDataQuery = $this->db->getQueryBuilder();
 			$metaDataQuery->select([$this->dbForeignKeyName, 'key', 'value'])
 				->from($this->dbMetaDataTableName);
-			$metaDataStmt = $metaDataQuery->execute();
-			$metaDataRows = $metaDataStmt->fetchAll(\PDO::FETCH_ASSOC);
+			$metaDataStmt = $metaDataQuery->executeQuery();
+			$metaDataRows = $metaDataStmt->fetchAllAssociative();
 
 			$metaDataById = [];
 			foreach ($metaDataRows as $metaDataRow) {
@@ -110,11 +88,11 @@ abstract class AbstractPrincipalBackend implements BackendInterface {
 					$metaDataById[$metaDataRow[$this->dbForeignKeyName]] = [];
 				}
 
-				$metaDataById[$metaDataRow[$this->dbForeignKeyName]][$metaDataRow['key']] =
-					$metaDataRow['value'];
+				$metaDataById[$metaDataRow[$this->dbForeignKeyName]][$metaDataRow['key']]
+					= $metaDataRow['value'];
 			}
 
-			while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+			while ($row = $stmt->fetchAssociative()) {
 				$id = $row['id'];
 
 				if (isset($metaDataById[$id])) {
@@ -139,6 +117,7 @@ abstract class AbstractPrincipalBackend implements BackendInterface {
 	 *
 	 * @return array
 	 */
+	#[\Override]
 	public function getPrincipalByPath($path) {
 		if (!str_starts_with($path, $this->principalPrefix)) {
 			return null;
@@ -152,8 +131,8 @@ abstract class AbstractPrincipalBackend implements BackendInterface {
 			->from($this->dbTableName)
 			->where($query->expr()->eq('backend_id', $query->createNamedParameter($backendId)))
 			->andWhere($query->expr()->eq('resource_id', $query->createNamedParameter($resourceId)));
-		$stmt = $query->execute();
-		$row = $stmt->fetch(\PDO::FETCH_ASSOC);
+		$stmt = $query->executeQuery();
+		$row = $stmt->fetchAssociative();
 
 		if (!$row) {
 			return null;
@@ -163,8 +142,8 @@ abstract class AbstractPrincipalBackend implements BackendInterface {
 		$metaDataQuery->select(['key', 'value'])
 			->from($this->dbMetaDataTableName)
 			->where($metaDataQuery->expr()->eq($this->dbForeignKeyName, $metaDataQuery->createNamedParameter($row['id'])));
-		$metaDataStmt = $metaDataQuery->execute();
-		$metaDataRows = $metaDataStmt->fetchAll(\PDO::FETCH_ASSOC);
+		$metaDataStmt = $metaDataQuery->executeQuery();
+		$metaDataRows = $metaDataStmt->fetchAllAssociative();
 		$metadata = [];
 
 		foreach ($metaDataRows as $metaDataRow) {
@@ -183,8 +162,8 @@ abstract class AbstractPrincipalBackend implements BackendInterface {
 		$query->select(['id', 'backend_id', 'resource_id', 'email', 'displayname'])
 			->from($this->dbTableName)
 			->where($query->expr()->eq('id', $query->createNamedParameter($id)));
-		$stmt = $query->execute();
-		$row = $stmt->fetch(\PDO::FETCH_ASSOC);
+		$stmt = $query->executeQuery();
+		$row = $stmt->fetchAssociative();
 
 		if (!$row) {
 			return null;
@@ -194,8 +173,8 @@ abstract class AbstractPrincipalBackend implements BackendInterface {
 		$metaDataQuery->select(['key', 'value'])
 			->from($this->dbMetaDataTableName)
 			->where($metaDataQuery->expr()->eq($this->dbForeignKeyName, $metaDataQuery->createNamedParameter($row['id'])));
-		$metaDataStmt = $metaDataQuery->execute();
-		$metaDataRows = $metaDataStmt->fetchAll(\PDO::FETCH_ASSOC);
+		$metaDataStmt = $metaDataQuery->executeQuery();
+		$metaDataRows = $metaDataStmt->fetchAllAssociative();
 		$metadata = [];
 
 		foreach ($metaDataRows as $metaDataRow) {
@@ -210,6 +189,7 @@ abstract class AbstractPrincipalBackend implements BackendInterface {
 	 * @param PropPatch $propPatch
 	 * @return int
 	 */
+	#[\Override]
 	public function updatePrincipal($path, PropPatch $propPatch): int {
 		return 0;
 	}
@@ -220,6 +200,7 @@ abstract class AbstractPrincipalBackend implements BackendInterface {
 	 *
 	 * @return array
 	 */
+	#[\Override]
 	public function searchPrincipals($prefixPath, array $searchProperties, $test = 'allof') {
 		$results = [];
 		if (\count($searchProperties) === 0) {
@@ -243,9 +224,9 @@ abstract class AbstractPrincipalBackend implements BackendInterface {
 						->from($this->dbTableName)
 						->where($query->expr()->iLike('email', $query->createNamedParameter('%' . $this->db->escapeLikeParameter($value) . '%')));
 
-					$stmt = $query->execute();
+					$stmt = $query->executeQuery();
 					$principals = [];
-					while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+					while ($row = $stmt->fetchAssociative()) {
 						if (!$this->isAllowedToAccessResource($row, $usersGroups)) {
 							continue;
 						}
@@ -262,9 +243,9 @@ abstract class AbstractPrincipalBackend implements BackendInterface {
 						->from($this->dbTableName)
 						->where($query->expr()->iLike('displayname', $query->createNamedParameter('%' . $this->db->escapeLikeParameter($value) . '%')));
 
-					$stmt = $query->execute();
+					$stmt = $query->executeQuery();
 					$principals = [];
-					while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+					while ($row = $stmt->fetchAssociative()) {
 						if (!$this->isAllowedToAccessResource($row, $usersGroups)) {
 							continue;
 						}
@@ -307,7 +288,6 @@ abstract class AbstractPrincipalBackend implements BackendInterface {
 		switch ($test) {
 			case 'anyof':
 				return array_values(array_unique(array_merge(...$results)));
-
 			case 'allof':
 			default:
 				return array_values(array_intersect(...$results));
@@ -390,7 +370,7 @@ abstract class AbstractPrincipalBackend implements BackendInterface {
 		}
 
 		$rows = [];
-		while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+		while ($row = $stmt->fetchAssociative()) {
 			$principalRow = $this->getPrincipalById($row[$this->dbForeignKeyName]);
 			if (!$principalRow) {
 				continue;
@@ -416,6 +396,7 @@ abstract class AbstractPrincipalBackend implements BackendInterface {
 	 * @return null|string
 	 * @throws Exception
 	 */
+	#[\Override]
 	public function findByUri($uri, $principalPrefix): ?string {
 		$user = $this->userSession->getUser();
 		if (!$user) {
@@ -430,8 +411,8 @@ abstract class AbstractPrincipalBackend implements BackendInterface {
 				->from($this->dbTableName)
 				->where($query->expr()->eq('email', $query->createNamedParameter($email)));
 
-			$stmt = $query->execute();
-			$row = $stmt->fetch(\PDO::FETCH_ASSOC);
+			$stmt = $query->executeQuery();
+			$row = $stmt->fetchAssociative();
 
 			if (!$row) {
 				return null;
@@ -457,8 +438,8 @@ abstract class AbstractPrincipalBackend implements BackendInterface {
 				->from($this->dbTableName)
 				->where($query->expr()->eq('backend_id', $query->createNamedParameter($backendId)))
 				->andWhere($query->expr()->eq('resource_id', $query->createNamedParameter($resourceId)));
-			$stmt = $query->execute();
-			$row = $stmt->fetch(\PDO::FETCH_ASSOC);
+			$stmt = $query->executeQuery();
+			$row = $stmt->fetchAssociative();
 
 			if (!$row) {
 				return null;
@@ -495,9 +476,9 @@ abstract class AbstractPrincipalBackend implements BackendInterface {
 	 * @return bool
 	 */
 	private function isAllowedToAccessResource(array $row, array $userGroups): bool {
-		if (!isset($row['group_restrictions']) ||
-			$row['group_restrictions'] === null ||
-			$row['group_restrictions'] === '') {
+		if (!isset($row['group_restrictions'])
+			|| $row['group_restrictions'] === null
+			|| $row['group_restrictions'] === '') {
 			return true;
 		}
 

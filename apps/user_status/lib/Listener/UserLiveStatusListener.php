@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2020 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\UserStatus\Listener;
 
 use OCA\DAV\CalDAV\Status\StatusService as CalendarStatusService;
@@ -29,25 +30,19 @@ use Psr\Log\LoggerInterface;
  * @template-implements IEventListener<UserLiveStatusEvent>
  */
 class UserLiveStatusListener implements IEventListener {
-	private UserStatusMapper $mapper;
-	private StatusService $statusService;
-	private ITimeFactory $timeFactory;
-
 	public function __construct(
-		UserStatusMapper $mapper,
-		StatusService $statusService,
-		ITimeFactory $timeFactory,
+		private UserStatusMapper $mapper,
+		private StatusService $statusService,
+		private ITimeFactory $timeFactory,
 		private CalendarStatusService $calendarStatusService,
 		private LoggerInterface $logger,
 	) {
-		$this->mapper = $mapper;
-		$this->statusService = $statusService;
-		$this->timeFactory = $timeFactory;
 	}
 
 	/**
 	 * @inheritDoc
 	 */
+	#[\Override]
 	public function handle(Event $event): void {
 		if (!($event instanceof UserLiveStatusEvent)) {
 			// Unrelated
@@ -68,8 +63,8 @@ class UserLiveStatusListener implements IEventListener {
 
 		// If the status is user-defined and one of the persistent status, we
 		// will not override it.
-		if ($userStatus->getIsUserDefined() &&
-			\in_array($userStatus->getStatus(), StatusService::PERSISTENT_STATUSES, true)) {
+		if ($userStatus->getIsUserDefined()
+			&& \in_array($userStatus->getStatus(), StatusService::PERSISTENT_STATUSES, true)) {
 			return;
 		}
 
@@ -81,15 +76,13 @@ class UserLiveStatusListener implements IEventListener {
 
 		$needsUpdate = false;
 
-		// If the current status is older than 5 minutes,
-		// treat it as outdated and update
-		if ($userStatus->getStatusTimestamp() < ($this->timeFactory->getTime() - StatusService::INVALIDATE_STATUS_THRESHOLD)) {
+		if ($userStatus->getStatusTimestamp() < ($this->timeFactory->getTime() - StatusService::REFRESH_STATUS_THRESHOLD)) {
 			$needsUpdate = true;
 		}
 
 		// If the emitted status is more important than the current status
 		// treat it as outdated and update
-		if (array_search($event->getStatus(), StatusService::PRIORITY_ORDERED_STATUSES) < array_search($userStatus->getStatus(), StatusService::PRIORITY_ORDERED_STATUSES)) {
+		if (array_search($event->getStatus(), StatusService::PRIORITY_ORDERED_STATUSES, true) < array_search($userStatus->getStatus(), StatusService::PRIORITY_ORDERED_STATUSES, true)) {
 			$needsUpdate = true;
 		}
 

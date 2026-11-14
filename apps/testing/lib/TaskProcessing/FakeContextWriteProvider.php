@@ -1,4 +1,5 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
@@ -9,7 +10,9 @@ declare(strict_types=1);
 namespace OCA\Testing\TaskProcessing;
 
 use OCA\Testing\AppInfo\Application;
+use OCP\AppFramework\Services\IAppConfig;
 use OCP\TaskProcessing\EShapeType;
+use OCP\TaskProcessing\Exception\ProcessingException;
 use OCP\TaskProcessing\ISynchronousProvider;
 use OCP\TaskProcessing\ShapeDescriptor;
 use OCP\TaskProcessing\ShapeEnumValue;
@@ -18,33 +21,42 @@ use RuntimeException;
 
 class FakeContextWriteProvider implements ISynchronousProvider {
 
-	public function __construct() {
+	public function __construct(
+		protected IAppConfig $appConfig,
+	) {
 	}
 
+	#[\Override]
 	public function getId(): string {
 		return Application::APP_ID . '-contextwrite';
 	}
 
+	#[\Override]
 	public function getName(): string {
 		return 'Fake context write task processing provider';
 	}
 
+	#[\Override]
 	public function getTaskTypeId(): string {
 		return ContextWrite::ID;
 	}
 
+	#[\Override]
 	public function getExpectedRuntime(): int {
 		return 1;
 	}
 
+	#[\Override]
 	public function getInputShapeEnumValues(): array {
 		return [];
 	}
 
+	#[\Override]
 	public function getInputShapeDefaults(): array {
 		return [];
 	}
 
+	#[\Override]
 	public function getOptionalInputShape(): array {
 		return [
 			'max_tokens' => new ShapeDescriptor(
@@ -60,6 +72,7 @@ class FakeContextWriteProvider implements ISynchronousProvider {
 		];
 	}
 
+	#[\Override]
 	public function getOptionalInputShapeEnumValues(): array {
 		return [
 			'model' => [
@@ -70,6 +83,7 @@ class FakeContextWriteProvider implements ISynchronousProvider {
 		];
 	}
 
+	#[\Override]
 	public function getOptionalInputShapeDefaults(): array {
 		return [
 			'max_tokens' => 4321,
@@ -77,19 +91,27 @@ class FakeContextWriteProvider implements ISynchronousProvider {
 		];
 	}
 
+	#[\Override]
 	public function getOutputShapeEnumValues(): array {
 		return [];
 	}
 
+	#[\Override]
 	public function getOptionalOutputShape(): array {
 		return [];
 	}
 
+	#[\Override]
 	public function getOptionalOutputShapeEnumValues(): array {
 		return [];
 	}
 
+	#[\Override]
 	public function process(?string $userId, array $input, callable $reportProgress): array {
+		if ($this->appConfig->getAppValueBool('fail-' . $this->getId())) {
+			throw new ProcessingException('Failing as set by AppConfig');
+		}
+
 		if (
 			!isset($input['style_input']) || !is_string($input['style_input'])
 				|| !isset($input['source_input']) || !is_string($input['source_input'])

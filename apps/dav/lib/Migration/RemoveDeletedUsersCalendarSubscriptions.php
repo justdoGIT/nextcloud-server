@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2021 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Migration;
 
 use OCP\DB\Exception;
@@ -15,28 +16,24 @@ use OCP\Migration\IOutput;
 use OCP\Migration\IRepairStep;
 
 class RemoveDeletedUsersCalendarSubscriptions implements IRepairStep {
-	/** @var IDBConnection */
-	private $connection;
-
-	/** @var IUserManager */
-	private $userManager;
-
 	/** @var int */
 	private $progress = 0;
 
 	/** @var int[] */
 	private $orphanSubscriptionIds = [];
 
-	private const SUBSCRIPTIONS_CHUNK_SIZE = 1000;
+	private const int SUBSCRIPTIONS_CHUNK_SIZE = 1000;
 
-	public function __construct(IDBConnection $connection, IUserManager $userManager) {
-		$this->connection = $connection;
-		$this->userManager = $userManager;
+	public function __construct(
+		private IDBConnection $connection,
+		private IUserManager $userManager,
+	) {
 	}
 
 	/**
 	 * @inheritdoc
 	 */
+	#[\Override]
 	public function getName(): string {
 		return 'Clean up old calendar subscriptions from deleted users that were not cleaned-up';
 	}
@@ -44,6 +41,7 @@ class RemoveDeletedUsersCalendarSubscriptions implements IRepairStep {
 	/**
 	 * @inheritdoc
 	 */
+	#[\Override]
 	public function run(IOutput $output) {
 		$nbSubscriptions = $this->countSubscriptions();
 
@@ -69,7 +67,7 @@ class RemoveDeletedUsersCalendarSubscriptions implements IRepairStep {
 		$query = $qb->select($qb->func()->count('*'))
 			->from('calendarsubscriptions');
 
-		$result = $query->execute();
+		$result = $query->executeQuery();
 		$count = $result->fetchOne();
 		$result->closeCursor();
 
@@ -92,8 +90,8 @@ class RemoveDeletedUsersCalendarSubscriptions implements IRepairStep {
 			->setMaxResults(self::SUBSCRIPTIONS_CHUNK_SIZE)
 			->setFirstResult($this->progress);
 
-		$result = $query->execute();
-		while ($row = $result->fetch()) {
+		$result = $query->executeQuery();
+		while ($row = $result->fetchAssociative()) {
 			$username = $this->getPrincipal($row['principaluri']);
 			if (!$this->userManager->userExists($username)) {
 				$this->orphanSubscriptionIds[] = (int)$row['id'];

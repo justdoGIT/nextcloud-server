@@ -5,6 +5,7 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\User_LDAP;
 
 use DomainException;
@@ -15,11 +16,13 @@ use OCA\User_LDAP\Exceptions\NoMoreResults;
 use OCA\User_LDAP\Mapping\AbstractMapping;
 use OCA\User_LDAP\User\Manager;
 use OCA\User_LDAP\User\OfflineUser;
+use OCP\Cache\CappedMemoryCache;
 use OCP\EventDispatcher\IEventDispatcher;
 use OCP\HintException;
 use OCP\IAppConfig;
-use OCP\IConfig;
+use OCP\IGroupManager;
 use OCP\IUserManager;
+use OCP\Server;
 use OCP\User\Events\UserIdAssignedEvent;
 use OCP\Util;
 use Psr\Log\LoggerInterface;
@@ -47,13 +50,13 @@ class Access extends LDAPUtility {
 	protected $groupMapper;
 
 	private string $lastCookie = '';
+	private CappedMemoryCache $intermediates;
 
 	public function __construct(
 		ILDAPWrapper $ldap,
 		public Connection $connection,
 		public Manager $userManager,
 		private Helper $helper,
-		private IConfig $config,
 		private IUserManager $ncUserManager,
 		private LoggerInterface $logger,
 		private IAppConfig $appConfig,
@@ -61,6 +64,7 @@ class Access extends LDAPUtility {
 	) {
 		parent::__construct($ldap);
 		$this->userManager->setLdapAccess($this);
+		$this->intermediates = new CappedMemoryCache();
 	}
 
 	/**
@@ -339,10 +343,10 @@ class Access extends LDAPUtility {
 		$cr = $this->connection->getConnectionResource();
 		try {
 			// try PASSWD extended operation first
-			return @$this->invokeLDAPMethod('exopPasswd', $userDN, '', $password) ||
-				@$this->invokeLDAPMethod('modReplace', $userDN, $password);
+			return @$this->invokeLDAPMethod('exopPasswd', $userDN, '', $password)
+				|| @$this->invokeLDAPMethod('modReplace', $userDN, $password);
 		} catch (ConstraintViolationException $e) {
-			throw new HintException('Password change rejected.', Util::getL10N('user_ldap')->t('Password change rejected. Hint: ') . $e->getMessage(), (int)$e->getCode());
+			throw new HintException('Password change rejected.', Util::getL10N('user_ldap')->t('Password change rejected. Hint: %s', $e->getMessage()), (int)$e->getCode());
 		}
 	}
 
@@ -360,7 +364,7 @@ class Access extends LDAPUtility {
 			// memberOf is an "operational" attribute, without a definition in any RFC
 			'memberof'
 		];
-		return in_array($attr, $resemblingAttributes);
+		return in_array($attr, $resemblingAttributes, true);
 	}
 
 	/**
@@ -436,10 +440,11 @@ class Access extends LDAPUtility {
 	 *
 	 * @param string $fdn the dn of the group object
 	 * @param string $ldapName optional, the display name of the object
+	 * @param bool $autoMapping Should the group be mapped if not yet mapped
 	 * @return string|false with the name to use in Nextcloud, false on DN outside of search DN
 	 * @throws \Exception
 	 */
-	public function dn2groupname($fdn, $ldapName = null) {
+	public function dn2groupname($fdn, $ldapName = null, bool $autoMapping = true) {
 		//To avoid bypassing the base DN settings under certain circumstances
 		//with the group support, check whether the provided DN matches one of
 		//the given Bases
@@ -447,7 +452,7 @@ class Access extends LDAPUtility {
 			return false;
 		}
 
-		return $this->dn2ocname($fdn, $ldapName, false);
+		return $this->dn2ocname($fdn, $ldapName, false, autoMapping:$autoMapping);
 	}
 
 	/**
@@ -477,12 +482,12 @@ class Access extends LDAPUtility {
 	 * @param bool $isUser optional, whether it is a user object (otherwise group assumed)
 	 * @param bool|null $newlyMapped
 	 * @param array|null $record
+	 * @param bool $autoMapping Should the group be mapped if not yet mapped
 	 * @return false|string with with the name to use in Nextcloud
 	 * @throws \Exception
 	 */
-	public function dn2ocname($fdn, $ldapName = null, $isUser = true, &$newlyMapped = null, ?array $record = null) {
-		static $intermediates = [];
-		if (isset($intermediates[($isUser ? 'user-' : 'group-') . $fdn])) {
+	public function dn2ocname($fdn, $ldapName = null, $isUser = true, &$newlyMapped = null, ?array $record = null, bool $autoMapping = true) {
+		if (isset($this->intermediates[($isUser ? 'user-' : 'group-') . $fdn])) {
 			return false; // is a known intermediate
 		}
 
@@ -497,6 +502,11 @@ class Access extends LDAPUtility {
 		$ncName = $mapper->getNameByDN($fdn);
 		if (is_string($ncName)) {
 			return $ncName;
+		}
+
+		if (!$autoMapping) {
+			/* If no auto mapping, stop there */
+			return false;
 		}
 
 		if ($isUser) {
@@ -524,7 +534,7 @@ class Access extends LDAPUtility {
 			$record = $this->readAttributes($fdn, $attributesToRead, $filter);
 			if ($record === false) {
 				$this->logger->debug('Cannot read attributes for ' . $fdn . '. Skipping.', ['filter' => $filter]);
-				$intermediates[($isUser ? 'user-' : 'group-') . $fdn] = true;
+				$this->intermediates[($isUser ? 'user-' : 'group-') . $fdn] = true;
 				return false;
 			}
 		}
@@ -571,7 +581,7 @@ class Access extends LDAPUtility {
 				$ldapName = $record[$nameAttribute];
 				if (!isset($ldapName[0]) || empty($ldapName[0])) {
 					$this->logger->debug('No or empty name for ' . $fdn . ' with filter ' . $filter . '.', ['app' => 'user_ldap']);
-					$intermediates['group-' . $fdn] = true;
+					$this->intermediates['group-' . $fdn] = true;
 					return false;
 				}
 				$ldapName = $ldapName[0];
@@ -587,7 +597,7 @@ class Access extends LDAPUtility {
 		$this->connection->setConfiguration(['ldapCacheTTL' => 0]);
 		if ($intName !== ''
 			&& (($isUser && !$this->ncUserManager->userExists($intName))
-				|| (!$isUser && !\OC::$server->getGroupManager()->groupExists($intName))
+				|| (!$isUser && !Server::get(IGroupManager::class)->groupExists($intName))
 			)
 		) {
 			$this->connection->setConfiguration(['ldapCacheTTL' => $originalTTL]);
@@ -697,7 +707,7 @@ class Access extends LDAPUtility {
 						continue;
 					}
 					$sndName = $ldapObject[$sndAttribute][0] ?? '';
-					$this->cacheUserDisplayName($ncName, $nameByLDAP, $sndName);
+					$this->applyUserDisplayName($ncName, $nameByLDAP, $sndName);
 				} elseif ($nameByLDAP !== null) {
 					$this->cacheGroupDisplayName($ncName, $nameByLDAP);
 				}
@@ -745,20 +755,16 @@ class Access extends LDAPUtility {
 		$this->connection->writeToCache('groupExists' . $gid, true);
 	}
 
-	/**
-	 * caches the user display name
-	 *
-	 * @param string $ocName the internal Nextcloud username
-	 * @param string $displayName the display name
-	 * @param string $displayName2 the second display name
-	 * @throws \Exception
-	 */
-	public function cacheUserDisplayName(string $ocName, string $displayName, string $displayName2 = ''): void {
-		$user = $this->userManager->get($ocName);
+	public function applyUserDisplayName(string $uid, string $displayName, string $displayName2 = ''): void {
+		$user = $this->userManager->get($uid);
 		if ($user === null) {
 			return;
 		}
-		$displayName = $user->composeAndStoreDisplayName($displayName, $displayName2);
+		$composedDisplayName = $user->composeAndStoreDisplayName($displayName, $displayName2);
+		$this->cacheUserDisplayName($uid, $composedDisplayName);
+	}
+
+	public function cacheUserDisplayName(string $ocName, string $displayName): void {
 		$cacheKeyTrunk = 'getDisplayName';
 		$this->connection->writeToCache($cacheKeyTrunk . $ocName, $displayName);
 	}
@@ -821,7 +827,7 @@ class Access extends LDAPUtility {
 			// Check to be really sure it is unique
 			// while loop is just a precaution. If a name is not generated within
 			// 20 attempts, something else is very wrong. Avoids infinite loop.
-			if (!\OC::$server->getGroupManager()->groupExists($altName)) {
+			if (!Server::get(IGroupManager::class)->groupExists($altName)) {
 				return $altName;
 			}
 			$altName = $name . '_' . ($lastNo + $attempts);
@@ -949,22 +955,6 @@ class Access extends LDAPUtility {
 		}
 		$groupRecords = $this->searchGroups($filter, $attr, $limit, $offset);
 
-		$listOfDNs = array_reduce($groupRecords, function ($listOfDNs, $entry) {
-			$listOfDNs[] = $entry['dn'][0];
-			return $listOfDNs;
-		}, []);
-		$idsByDn = $this->getGroupMapper()->getListOfIdsByDn($listOfDNs);
-
-		array_walk($groupRecords, function (array $record) use ($idsByDn): void {
-			$newlyMapped = false;
-			$gid = $idsByDn[$record['dn'][0]] ?? null;
-			if ($gid === null) {
-				$gid = $this->dn2ocname($record['dn'][0], null, false, $newlyMapped, $record);
-			}
-			if (!$newlyMapped && is_string($gid)) {
-				$this->cacheGroupExists($gid);
-			}
-		});
 		$listOfGroups = $this->fetchList($groupRecords, $this->manyAttributes($attr));
 		$this->connection->writeToCache($cacheKey, $listOfGroups);
 		return $listOfGroups;
@@ -1057,16 +1047,12 @@ class Access extends LDAPUtility {
 	/**
 	 * Returns the LDAP handler
 	 *
-	 * @throws \OC\ServerNotAvailableException
-	 */
-
-	/**
 	 * @param mixed[] $arguments
 	 * @return mixed
-	 * @throws \OC\ServerNotAvailableException
+	 * @throws ServerNotAvailableException
 	 */
 	private function invokeLDAPMethod(string $command, ...$arguments) {
-		if ($command == 'controlPagedResultResponse') {
+		if ($command === 'controlPagedResultResponse') {
 			// php no longer supports call-time pass-by-reference
 			// thus cannot support controlPagedResultResponse as the third argument
 			// is a reference
@@ -1579,15 +1565,18 @@ class Access extends LDAPUtility {
 	 * a *
 	 */
 	private function prepareSearchTerm(string $term): string {
-		$config = \OC::$server->getConfig();
-
-		$allowEnum = $config->getAppValue('core', 'shareapi_allow_share_dialog_user_enumeration', 'yes');
+		$allowEnum = $this->appConfig->getValueBool('core', 'shareapi_allow_share_dialog_user_enumeration', true);
 
 		$result = $term;
 		if ($term === '') {
 			$result = '*';
-		} elseif ($allowEnum !== 'no') {
-			$result = $term . '*';
+		} elseif ($allowEnum) {
+			$usePrefixWildcard = $this->appConfig->getValueBool('user_ldap', 'partial_search_with_prefix_wildcard', false);
+			if ($usePrefixWildcard) {
+				$result = '*' . $term . '*';
+			} else {
+				$result = $term . '*';
+			}
 		}
 		return $result;
 	}
@@ -1818,8 +1807,8 @@ class Access extends LDAPUtility {
 			 * user. Instead we write a log message.
 			 */
 			$this->logger->info(
-				'Passed string does not resemble a valid GUID. Known UUID ' .
-				'({uuid}) probably does not match UUID configuration.',
+				'Passed string does not resemble a valid GUID. Known UUID '
+				. '({uuid}) probably does not match UUID configuration.',
 				['app' => 'user_ldap', 'uuid' => $guid]
 			);
 			return $guid;

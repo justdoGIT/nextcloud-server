@@ -11,50 +11,43 @@ namespace OCA\DAV\SystemTag;
 
 use OC\SystemTag\SystemTag;
 use OC\SystemTag\SystemTagsInFilesDetector;
-use OC\User\NoUserException;
 use OCP\Files\IRootFolder;
 use OCP\Files\NotPermittedException;
 use OCP\IUserSession;
 use OCP\SystemTag\ISystemTagManager;
+use OCP\SystemTag\ISystemTagObjectMapper;
+use OCP\User\Exceptions\UserNotFoundException;
 use Sabre\DAV\Exception\Forbidden;
 use Sabre\DAV\Exception\NotFound;
 use Sabre\DAV\SimpleCollection;
 
 class SystemTagsInUseCollection extends SimpleCollection {
-	protected IUserSession $userSession;
-	protected IRootFolder $rootFolder;
-	protected string $mediaType;
-	protected ISystemTagManager $systemTagManager;
-	protected SystemTagsInFilesDetector $systemTagsInFilesDetector;
-
 	/** @noinspection PhpMissingParentConstructorInspection */
 	public function __construct(
-		IUserSession $userSession,
-		IRootFolder $rootFolder,
-		ISystemTagManager $systemTagManager,
-		SystemTagsInFilesDetector $systemTagsInFilesDetector,
-		string $mediaType = '',
+		protected IUserSession $userSession,
+		protected IRootFolder $rootFolder,
+		protected ISystemTagManager $systemTagManager,
+		protected ISystemTagObjectMapper $tagMapper,
+		protected SystemTagsInFilesDetector $systemTagsInFilesDetector,
+		protected string $mediaType = '',
 	) {
-		$this->userSession = $userSession;
-		$this->rootFolder = $rootFolder;
-		$this->systemTagManager = $systemTagManager;
-		$this->mediaType = $mediaType;
-		$this->systemTagsInFilesDetector = $systemTagsInFilesDetector;
 		$this->name = 'systemtags-assigned';
-		if ($this->mediaType != '') {
+		if ($this->mediaType !== '') {
 			$this->name .= '/' . $this->mediaType;
 		}
 	}
 
+	#[\Override]
 	public function setName($name): void {
 		throw new Forbidden('Permission denied to rename this collection');
 	}
 
+	#[\Override]
 	public function getChild($name): self {
 		if ($this->mediaType !== '') {
 			throw new NotFound('Invalid media type');
 		}
-		return new self($this->userSession, $this->rootFolder, $this->systemTagManager, $this->systemTagsInFilesDetector, $name);
+		return new self($this->userSession, $this->rootFolder, $this->systemTagManager, $this->tagMapper, $this->systemTagsInFilesDetector, $name);
 	}
 
 	/**
@@ -62,6 +55,7 @@ class SystemTagsInUseCollection extends SimpleCollection {
 	 * @throws NotPermittedException
 	 * @throws Forbidden
 	 */
+	#[\Override]
 	public function getChildren(): array {
 		$user = $this->userSession->getUser();
 		$userFolder = null;
@@ -69,7 +63,7 @@ class SystemTagsInUseCollection extends SimpleCollection {
 			if ($user) {
 				$userFolder = $this->rootFolder->getUserFolder($user->getUID());
 			}
-		} catch (NoUserException) {
+		} catch (UserNotFoundException) {
 			// will throw a Sabre exception in the next step.
 		}
 		if ($user === null || $userFolder === null) {
@@ -79,9 +73,9 @@ class SystemTagsInUseCollection extends SimpleCollection {
 		$result = $this->systemTagsInFilesDetector->detectAssignedSystemTagsIn($userFolder, $this->mediaType);
 		$children = [];
 		foreach ($result as $tagData) {
-			$tag = new SystemTag((string)$tagData['id'], $tagData['name'], (bool)$tagData['visibility'], (bool)$tagData['editable']);
+			$tag = new SystemTag((string)$tagData['id'], $tagData['name'], (bool)$tagData['visibility'], (bool)$tagData['editable'], $tagData['etag'], $tagData['color']);
 			// read only, so we can submit the isAdmin parameter as false generally
-			$node = new SystemTagNode($tag, $user, false, $this->systemTagManager);
+			$node = new SystemTagNode($tag, $user, false, $this->systemTagManager, $this->tagMapper);
 			$node->setNumberOfFiles((int)$tagData['number_files']);
 			$node->setReferenceFileId((int)$tagData['ref_file_id']);
 			$children[] = $node;

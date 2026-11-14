@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2021 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Settings\Listener;
 
 use OC\Group\Manager;
@@ -20,25 +21,14 @@ use OCP\IUserSession;
 /** @template-implements IEventListener<UserRemovedEvent> */
 class UserRemovedFromGroupActivityListener implements IEventListener {
 
-	/** @var Manager */
-	private $groupManager;
-
-	/** @var IManager */
-	private $activityManager;
-
-	/** @var IUserSession */
-	private $userSession;
-
 	public function __construct(
-		Manager $groupManager,
-		IManager $activityManager,
-		IUserSession $userSession,
+		private Manager $groupManager,
+		private IManager $activityManager,
+		private IUserSession $userSession,
 	) {
-		$this->groupManager = $groupManager;
-		$this->activityManager = $activityManager;
-		$this->userSession = $userSession;
 	}
 
+	#[\Override]
 	public function handle(Event $event): void {
 		if (!($event instanceof UserRemovedEvent)) {
 			return;
@@ -50,7 +40,6 @@ class UserRemovedFromGroupActivityListener implements IEventListener {
 		$subAdminManager = $this->groupManager->getSubAdmin();
 		$usersToNotify = $subAdminManager->getGroupsSubAdmins($group);
 		$usersToNotify[] = $user;
-
 
 		$event = $this->activityManager->generateEvent();
 		$event->setApp('settings')

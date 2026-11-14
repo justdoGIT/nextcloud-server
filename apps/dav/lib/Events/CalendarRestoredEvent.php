@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2021 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Events;
 
 use OCP\EventDispatcher\Event;
@@ -15,28 +16,18 @@ use OCP\EventDispatcher\Event;
  */
 class CalendarRestoredEvent extends Event {
 
-	/** @var int */
-	private $calendarId;
-
-	/** @var array */
-	private $calendarData;
-
-	/** @var array */
-	private $shares;
-
 	/**
 	 * @param int $calendarId
 	 * @param array $calendarData
 	 * @param array $shares
 	 * @since 22.0.0
 	 */
-	public function __construct(int $calendarId,
-		array $calendarData,
-		array $shares) {
+	public function __construct(
+		private int $calendarId,
+		private array $calendarData,
+		private array $shares,
+	) {
 		parent::__construct();
-		$this->calendarId = $calendarId;
-		$this->calendarData = $calendarData;
-		$this->shares = $shares;
 	}
 
 	/**

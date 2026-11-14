@@ -17,26 +17,21 @@ use OCP\AppFramework\Services\IInitialState;
 use OCP\IConfig;
 use OCP\Settings\ISettings;
 use OCP\User\IAvailabilityCoordinator;
+use OCP\Util;
 use Psr\Log\LoggerInterface;
 
 class AvailabilitySettings implements ISettings {
-	protected IConfig $config;
-	protected IInitialState $initialState;
-	protected ?string $userId;
-
 	public function __construct(
-		IConfig $config,
-		IInitialState $initialState,
-		?string $userId,
+		protected IConfig $config,
+		protected IInitialState $initialState,
+		protected ?string $userId,
 		private LoggerInterface $logger,
 		private IAvailabilityCoordinator $coordinator,
 		private AbsenceMapper $absenceMapper,
 	) {
-		$this->config = $config;
-		$this->initialState = $initialState;
-		$this->userId = $userId;
 	}
 
+	#[\Override]
 	public function getForm(): TemplateResponse {
 		$this->initialState->provideInitialState(
 			'user_status_automation',
@@ -63,13 +58,17 @@ class AvailabilitySettings implements ISettings {
 			}
 		}
 
+		Util::addStyle(Application::APP_ID, 'settings-personal-availability');
+		Util::addScript(Application::APP_ID, 'settings-personal-availability');
 		return new TemplateResponse(Application::APP_ID, 'settings-personal-availability');
 	}
 
+	#[\Override]
 	public function getSection(): string {
 		return 'availability';
 	}
 
+	#[\Override]
 	public function getPriority(): int {
 		return 10;
 	}

@@ -13,13 +13,12 @@ use Sabre\HTTP\RequestInterface;
 use Sabre\HTTP\ResponseInterface;
 
 class RequestIdHeaderPlugin extends \Sabre\DAV\ServerPlugin {
-	/** @var IRequest */
-	private $request;
-
-	public function __construct(IRequest $request) {
-		$this->request = $request;
+	public function __construct(
+		private IRequest $request,
+	) {
 	}
 
+	#[\Override]
 	public function initialize(\Sabre\DAV\Server $server) {
 		$server->on('afterMethod:*', [$this, 'afterMethod']);
 	}

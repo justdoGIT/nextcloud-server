@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCP\SystemTag;
 
 use OCP\IUser;
@@ -48,19 +49,31 @@ interface ISystemTagManager {
 	public function getTag(string $tagName, bool $userVisible, bool $userAssignable): ISystemTag;
 
 	/**
+	 * Returns the tag object to mark AI generated content with
+	 *
+	 * @return ISystemTag system tag
+	 * @since 34.0.0
+	 */
+	public function getGeneratedByAITag(): ISystemTag;
+
+	/**
 	 * Creates the tag object using the given attributes.
 	 *
 	 * @param string $tagName tag name
 	 * @param bool $userVisible whether the tag is visible by users
 	 * @param bool $userAssignable whether the tag is assignable by users
+	 * @param ?IUser $user the user that wants to create a tag. Null to use the one in session.
 	 *
 	 * @return ISystemTag system tag
 	 *
 	 * @throws TagAlreadyExistsException if tag already exists
+	 * @throws TagCreationForbiddenException if user doesn't have the right to create a new tag
 	 *
 	 * @since 9.0.0
+	 * @since 31.0.0 Can throw TagCreationForbiddenExceptionif user doesn't have the right to create a new tag
+	 * @since 34.0.0 Added nullable $user parameter
 	 */
-	public function createTag(string $tagName, bool $userVisible, bool $userAssignable): ISystemTag;
+	public function createTag(string $tagName, bool $userVisible, bool $userAssignable, ?IUser $user = null): ISystemTag;
 
 	/**
 	 * Returns all known tags, optionally filtered by visibility.
@@ -81,14 +94,18 @@ interface ISystemTagManager {
 	 * @param string $newName the new tag name
 	 * @param bool $userVisible whether the tag is visible by users
 	 * @param bool $userAssignable whether the tag is assignable by users
+	 * @param string $color color
+	 * @param ?IUser $user the user that wants to update a tag. Null to use the one in session.
 	 *
 	 * @throws TagNotFoundException if tag with the given id does not exist
 	 * @throws TagAlreadyExistsException if there is already another tag
 	 *                                   with the same attributes
 	 *
 	 * @since 9.0.0
+	 * @since 31.0.0 `$color` parameter added
+	 * @since 34.0.0 Added nullable $user parameter
 	 */
-	public function updateTag(string $tagId, string $newName, bool $userVisible, bool $userAssignable);
+	public function updateTag(string $tagId, string $newName, bool $userVisible, bool $userAssignable, ?string $color, ?IUser $user = null): void;
 
 	/**
 	 * Delete the given tags from the database and all their relationships.
@@ -114,6 +131,26 @@ interface ISystemTagManager {
 	 * @since 31.0.0 `$user` can be null to check anonymous permissions
 	 */
 	public function canUserAssignTag(ISystemTag $tag, ?IUser $user): bool;
+
+	/**
+	 * Checks whether the given user is allowed to create new tags
+	 *
+	 * @param IUser|null $user user to check permission for
+	 * @return bool true if the user is allowed to create a new tag, false otherwise
+	 *
+	 * @since 31.0.0
+	 */
+	public function canUserCreateTag(?IUser $user): bool;
+
+	/**
+	 * Checks whether the given user is allowed to update tags
+	 *
+	 * @param IUser|null $user user to check permission for
+	 * @return bool true if the user is allowed to update a tag, false otherwise
+	 *
+	 * @since 31.0.0
+	 */
+	public function canUserUpdateTag(?IUser $user): bool;
 
 	/**
 	 * Checks whether the given user is allowed to see the tag with the given id.

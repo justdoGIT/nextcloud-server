@@ -5,11 +5,14 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Files\BackgroundJob;
 
 use OC\Lock\DBLockingProvider;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\TimedJob;
+use OCP\Lock\ILockingProvider;
+use OCP\Server;
 
 /**
  * Clean up all file locks that are expired for the DB file locking provider
@@ -29,8 +32,9 @@ class CleanupFileLocks extends TimedJob {
 	 * @param array $argument unused argument
 	 * @throws \Exception
 	 */
+	#[\Override]
 	public function run($argument) {
-		$lockingProvider = \OC::$server->getLockingProvider();
+		$lockingProvider = Server::get(ILockingProvider::class);
 		if ($lockingProvider instanceof DBLockingProvider) {
 			$lockingProvider->cleanExpiredLocks();
 		}

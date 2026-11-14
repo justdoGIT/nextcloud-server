@@ -55,8 +55,11 @@ class ShardQueryRunner {
 	private function getLikelyShards(array $primaryKeys): array {
 		$shards = [];
 		foreach ($primaryKeys as $primaryKey) {
+			if ($primaryKey < $this->shardDefinition->fromFileId && !in_array(ShardDefinition::MIGRATION_SHARD, $shards, true)) {
+				$shards[] = ShardDefinition::MIGRATION_SHARD;
+			}
 			$encodedShard = $primaryKey & ShardDefinition::PRIMARY_KEY_SHARD_MASK;
-			if ($encodedShard < count($this->shardDefinition->shards) && !in_array($encodedShard, $shards)) {
+			if ($encodedShard < count($this->shardDefinition->shards) && !in_array($encodedShard, $shards, true)) {
 				$shards[] = $encodedShard;
 			}
 		}
@@ -101,7 +104,7 @@ class ShardQueryRunner {
 			foreach ($shards as $shard) {
 				$shardConnection = $this->shardConnectionManager->getConnection($this->shardDefinition, $shard);
 				$subResult = $query->executeQuery($shardConnection);
-				$results = array_merge($results, $subResult->fetchAll());
+				$results = array_merge($results, $subResult->fetchAllAssociative());
 				$subResult->closeCursor();
 			}
 		} else {
@@ -115,7 +118,7 @@ class ShardQueryRunner {
 			foreach ($shards as $shard) {
 				$shardConnection = $this->shardConnectionManager->getConnection($this->shardDefinition, $shard);
 				$subResult = $query->executeQuery($shardConnection);
-				$rows = $subResult->fetchAll();
+				$rows = $subResult->fetchAllAssociative();
 				$results = array_merge($results, $rows);
 				$subResult->closeCursor();
 

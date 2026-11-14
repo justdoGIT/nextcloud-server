@@ -6,19 +6,20 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2021 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Listener;
 
 use OCA\DAV\Connector\Sabre\Principal;
-use OCA\DAV\Events\CalendarObjectCreatedEvent;
-use OCA\DAV\Events\CalendarObjectUpdatedEvent;
 use OCA\DAV\Events\CalendarShareUpdatedEvent;
+use OCP\Calendar\Events\CalendarObjectCreatedEvent;
+use OCP\Calendar\Events\CalendarObjectUpdatedEvent;
 use OCP\Contacts\Events\ContactInteractedWithEvent;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventDispatcher;
 use OCP\EventDispatcher\IEventListener;
 use OCP\IUser;
 use OCP\IUserSession;
-use OCP\Mail\IMailer;
+use OCP\Mail\IEmailValidator;
 use Psr\Log\LoggerInterface;
 use Sabre\VObject\Component\VEvent;
 use Sabre\VObject\Parameter;
@@ -30,35 +31,18 @@ use function substr;
 
 /** @template-implements IEventListener<CalendarObjectCreatedEvent|CalendarObjectUpdatedEvent|CalendarShareUpdatedEvent> */
 class CalendarContactInteractionListener implements IEventListener {
-	private const URI_USERS = 'principals/users/';
+	private const string URI_USERS = 'principals/users/';
 
-	/** @var IEventDispatcher */
-	private $dispatcher;
-
-	/** @var IUserSession */
-	private $userSession;
-
-	/** @var Principal */
-	private $principalConnector;
-
-	/** @var IMailer */
-	private $mailer;
-
-	/** @var LoggerInterface */
-	private $logger;
-
-	public function __construct(IEventDispatcher $dispatcher,
-		IUserSession $userSession,
-		Principal $principalConnector,
-		IMailer $mailer,
-		LoggerInterface $logger) {
-		$this->dispatcher = $dispatcher;
-		$this->userSession = $userSession;
-		$this->principalConnector = $principalConnector;
-		$this->mailer = $mailer;
-		$this->logger = $logger;
+	public function __construct(
+		private IEventDispatcher $dispatcher,
+		private IUserSession $userSession,
+		private Principal $principalConnector,
+		private IEmailValidator $emailValidator,
+		private LoggerInterface $logger,
+	) {
 	}
 
+	#[\Override]
 	public function handle(Event $event): void {
 		if (($user = $this->userSession->getUser()) === null) {
 			// Without user context we can't do anything
@@ -147,7 +131,7 @@ class CalendarContactInteractionListener implements IEventListener {
 				continue;
 			}
 			$email = substr($mailTo, strlen('mailto:'));
-			if (!$this->mailer->validateMailAddress($email)) {
+			if (!$this->emailValidator->isValid($email)) {
 				// This really isn't a valid email
 				continue;
 			}

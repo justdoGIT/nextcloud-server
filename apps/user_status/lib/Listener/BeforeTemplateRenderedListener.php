@@ -23,18 +23,6 @@ use OCP\Util;
 /** @template-implements IEventListener<BeforeTemplateRenderedEvent> */
 class BeforeTemplateRenderedListener implements IEventListener {
 
-	/** @var ProfileManager */
-	private $profileManager;
-
-	/** @var IUserSession */
-	private $userSession;
-
-	/** @var IInitialStateService */
-	private $initialState;
-
-	/** @var JSDataService */
-	private $jsDataService;
-
 	/**
 	 * BeforeTemplateRenderedListener constructor.
 	 *
@@ -44,20 +32,17 @@ class BeforeTemplateRenderedListener implements IEventListener {
 	 * @param JSDataService $jsDataService
 	 */
 	public function __construct(
-		ProfileManager $profileManager,
-		IUserSession $userSession,
-		IInitialStateService $initialState,
-		JSDataService $jsDataService,
+		private ProfileManager $profileManager,
+		private IUserSession $userSession,
+		private IInitialStateService $initialState,
+		private JSDataService $jsDataService,
 	) {
-		$this->profileManager = $profileManager;
-		$this->userSession = $userSession;
-		$this->initialState = $initialState;
-		$this->jsDataService = $jsDataService;
 	}
 
 	/**
 	 * @inheritDoc
 	 */
+	#[\Override]
 	public function handle(Event $event): void {
 		$user = $this->userSession->getUser();
 		if ($user === null) {
@@ -82,6 +67,6 @@ class BeforeTemplateRenderedListener implements IEventListener {
 		});
 
 		Util::addScript('user_status', 'menu');
-		Util::addStyle('user_status', 'user-status-menu');
+		Util::addStyle('user_status', 'menu');
 	}
 }

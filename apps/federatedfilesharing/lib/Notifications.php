@@ -5,14 +5,17 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\FederatedFileSharing;
 
+use OC\ServerNotAvailableException;
 use OCA\FederatedFileSharing\Events\FederatedShareAddedEvent;
 use OCP\AppFramework\Http;
 use OCP\BackgroundJob\IJobList;
 use OCP\EventDispatcher\IEventDispatcher;
 use OCP\Federation\ICloudFederationFactory;
 use OCP\Federation\ICloudFederationProviderManager;
+use OCP\HintException;
 use OCP\Http\Client\IClientService;
 use OCP\OCS\IDiscoveryService;
 use Psr\Log\LoggerInterface;
@@ -44,11 +47,12 @@ class Notifications {
 	 * @param string $sharedBy
 	 * @param string $sharedByFederatedId
 	 * @param int $shareType (can be a remote user or group share)
+	 * @param int $permissions Nextcloud permission bitmask
 	 * @return bool
-	 * @throws \OCP\HintException
-	 * @throws \OC\ServerNotAvailableException
+	 * @throws HintException
+	 * @throws ServerNotAvailableException
 	 */
-	public function sendRemoteShare($token, $shareWith, $name, $remoteId, $owner, $ownerFederatedId, $sharedBy, $sharedByFederatedId, $shareType) {
+	public function sendRemoteShare($token, $shareWith, $name, $remoteId, $owner, $ownerFederatedId, $sharedBy, $sharedByFederatedId, $shareType, int $permissions) {
 		[$user, $remote] = $this->addressHandler->splitUserRemote($shareWith);
 
 		if ($user && $remote) {
@@ -64,7 +68,8 @@ class Notifications {
 				'sharedBy' => $sharedBy,
 				'sharedByFederatedId' => $sharedByFederatedId,
 				'remote' => $local,
-				'shareType' => $shareType
+				'shareType' => $shareType,
+				'permissions' => $permissions,
 			];
 
 			$result = $this->tryHttpPostToShareEndpoint($remote, '', $fields);
@@ -104,15 +109,16 @@ class Notifications {
 	 * @param int $permission
 	 * @param string $filename
 	 * @return array|false
-	 * @throws \OCP\HintException
-	 * @throws \OC\ServerNotAvailableException
+	 * @throws HintException
+	 * @throws ServerNotAvailableException
 	 */
-	public function requestReShare($token, $id, $shareId, $remote, $shareWith, $permission, $filename) {
+	public function requestReShare($token, $id, $shareId, $remote, $shareWith, $permission, $filename, $shareType) {
 		$fields = [
 			'shareWith' => $shareWith,
 			'token' => $token,
 			'permission' => $permission,
 			'remoteId' => $shareId,
+			'shareType' => $shareType,
 		];
 
 		$ocmFields = $fields;
@@ -240,10 +246,10 @@ class Notifications {
 		$result = $this->tryHttpPostToShareEndpoint(rtrim($remote, '/'), '/' . $remoteId . '/' . $action, $fields, $action);
 		$status = json_decode($result['result'], true);
 
-		if ($result['success'] &&
-			isset($status['ocs']['meta']['statuscode']) &&
-			($status['ocs']['meta']['statuscode'] === 100 ||
-				$status['ocs']['meta']['statuscode'] === 200
+		if ($result['success']
+			&& isset($status['ocs']['meta']['statuscode'])
+			&& ($status['ocs']['meta']['statuscode'] === 100
+				|| $status['ocs']['meta']['statuscode'] === 200
 			)
 		) {
 			return true;
@@ -264,7 +270,6 @@ class Notifications {
 
 		return false;
 	}
-
 
 	/**
 	 * return current timestamp
@@ -303,6 +308,10 @@ class Notifications {
 			$result['result'] = json_encode([
 				'ocs' => ['meta' => ['statuscode' => 200]]]);
 			return $result;
+		}
+
+		if ($action === 'share') {
+			unset($fields['permissions']);
 		}
 
 		return $this->tryLegacyEndPoint($remoteDomain, $urlSuffix, $fields);
@@ -370,7 +379,8 @@ class Notifications {
 					$fields['sharedBy'],
 					$fields['token'],
 					$fields['shareType'],
-					'file'
+					'file',
+					$fields['permissions']
 				);
 				return $this->federationProviderManager->sendShare($share);
 			case 'reshare':
@@ -396,7 +406,7 @@ class Notifications {
 					$fields['remoteId'],
 					[
 						'sharedSecret' => $fields['token'],
-						'messgage' => 'file is no longer shared with you'
+						'message' => 'file is no longer shared with you'
 					]
 				);
 				return $this->federationProviderManager->sendNotification($remoteDomain, $notification);

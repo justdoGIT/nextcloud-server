@@ -12,13 +12,14 @@ namespace OCA\DAV\Tests\unit\CalDAV;
 use OCA\DAV\CalDAV\CachedSubscription;
 use OCA\DAV\CalDAV\CachedSubscriptionImpl;
 use OCA\DAV\CalDAV\CalDavBackend;
+use PHPUnit\Framework\MockObject\MockObject;
 use Test\TestCase;
 
 class CachedSubscriptionImplTest extends TestCase {
-	private CachedSubscription $cachedSubscription;
+	private CachedSubscription&MockObject $cachedSubscription;
 	private array $cachedSubscriptionInfo;
+	private CalDavBackend&MockObject $backend;
 	private CachedSubscriptionImpl $cachedSubscriptionImpl;
-	private CalDavBackend $backend;
 
 	protected function setUp(): void {
 		parent::setUp();
@@ -50,6 +51,20 @@ class CachedSubscriptionImplTest extends TestCase {
 
 	public function testGetDisplayColor(): void {
 		$this->assertEquals($this->cachedSubscriptionImpl->getDisplayColor(), '#AABBCC');
+	}
+
+	public function testGetDisplayPropertiesWhenMissing(): void {
+		$calendarInfo = $this->cachedSubscriptionInfo;
+		unset($calendarInfo['{DAV:}displayname']);
+		unset($calendarInfo['{http://apple.com/ns/ical/}calendar-color']);
+		$cachedSubscriptionImpl = new CachedSubscriptionImpl(
+			$this->cachedSubscription,
+			$calendarInfo,
+			$this->backend
+		);
+
+		$this->assertNull($cachedSubscriptionImpl->getDisplayName());
+		$this->assertNull($cachedSubscriptionImpl->getDisplayColor());
 	}
 
 	public function testGetSource(): void {

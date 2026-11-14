@@ -3,26 +3,19 @@
  - SPDX-License-Identifier: AGPL-3.0-or-later
  -->
 <template>
-	<NcDashboardWidget :items="items"
-		:show-more-label="showMoreLabel"
-		:show-more-url="showMoreUrl"
+	<NcDashboardWidget
+		:items="items"
+		:showMoreLabel="showMoreLabel"
+		:showMoreUrl="showMoreUrl"
 		:loading="loading"
-		:show-items-and-empty-content="!!halfEmptyContentMessage"
-		:half-empty-content-message="halfEmptyContentMessage">
+		:showItemsAndEmptyContent="!!halfEmptyContentMessage"
+		:halfEmptyContentMessage="halfEmptyContentMessage">
 		<template #default="{ item }">
-			<NcDashboardWidgetItem :target-url="item.link"
-				:overlay-icon-url="item.overlayIconUrl ? item.overlayIconUrl : ''"
-				:main-text="item.title"
-				:sub-text="item.subtitle">
-				<template #avatar>
-					<template v-if="item.iconUrl">
-						<NcAvatar :size="44" :url="item.iconUrl" />
-					</template>
-				</template>
-			</NcDashboardWidgetItem>
+			<ApiDashboardWidgetItem :item="item" :iconSize="iconSize" :roundedIcons="widget.item_icons_round" />
 		</template>
 		<template #empty-content>
-			<NcEmptyContent v-if="items.length === 0"
+			<NcEmptyContent
+				v-if="items.length === 0"
 				:description="emptyContentMessage">
 				<template #icon>
 					<CheckIcon v-if="emptyContentMessage" :size="65" />
@@ -38,39 +31,45 @@
 </template>
 
 <script>
-import {
-	NcAvatar,
-	NcDashboardWidget,
-	NcDashboardWidgetItem,
-	NcEmptyContent,
-	NcButton,
-} from '@nextcloud/vue'
+import NcButton from '@nextcloud/vue/components/NcButton'
+import NcDashboardWidget from '@nextcloud/vue/components/NcDashboardWidget'
+import NcEmptyContent from '@nextcloud/vue/components/NcEmptyContent'
 import CheckIcon from 'vue-material-design-icons/Check.vue'
+import ApiDashboardWidgetItem from './ApiDashboardWidgetItem.vue'
 
 export default {
 	name: 'ApiDashboardWidget',
 	components: {
-		NcAvatar,
+		ApiDashboardWidgetItem,
+		CheckIcon,
 		NcDashboardWidget,
-		NcDashboardWidgetItem,
 		NcEmptyContent,
 		NcButton,
-		CheckIcon,
 	},
+
 	props: {
 		widget: {
 			type: [Object, undefined],
 			default: undefined,
 		},
+
 		data: {
 			type: [Object, undefined],
 			default: undefined,
 		},
+
 		loading: {
 			type: Boolean,
 			required: true,
 		},
 	},
+
+	data() {
+		return {
+			iconSize: 44,
+		}
+	},
+
 	computed: {
 		/** @return {object[]} */
 		items() {
@@ -92,17 +91,17 @@ export default {
 			// TODO: Render new button in the template
 			// I couldn't find a widget that makes use of the button. Furthermore, there is no convenient
 			// way to render such a button using the official widget component.
-			return this.widget?.buttons?.find(button => button.type === 'new')
+			return this.widget?.buttons?.find((button) => button.type === 'new')
 		},
 
 		/** @return {object|undefined} */
 		moreButton() {
-			return this.widget?.buttons?.find(button => button.type === 'more')
+			return this.widget?.buttons?.find((button) => button.type === 'more')
 		},
 
 		/** @return {object|undefined} */
 		setupButton() {
-			return this.widget?.buttons?.find(button => button.type === 'setup')
+			return this.widget?.buttons?.find((button) => button.type === 'setup')
 		},
 
 		/** @return {string|undefined} */
@@ -115,8 +114,11 @@ export default {
 			return this.moreButton?.link
 		},
 	},
+
+	mounted() {
+		const size = window.getComputedStyle(document.body).getPropertyValue('--default-clickable-area')
+		const numeric = Number.parseFloat(size)
+		this.iconSize = Number.isNaN(numeric) ? 44 : numeric
+	},
 }
 </script>
-
-<style lang="scss" scoped>
-</style>

@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2019 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OC\Core\Service;
 
 use OC\Authentication\Exceptions\PasswordlessTokenException;
@@ -15,11 +16,14 @@ use OC\Core\Data\LoginFlowV2Credentials;
 use OC\Core\Data\LoginFlowV2Tokens;
 use OC\Core\Db\LoginFlowV2;
 use OC\Core\Db\LoginFlowV2Mapper;
+use OC\Core\Exception\LoginFlowV2ClientForbiddenException;
 use OC\Core\Exception\LoginFlowV2NotFoundException;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Authentication\Exceptions\InvalidTokenException;
+use OCP\EventDispatcher\IEventDispatcher;
 use OCP\IConfig;
+use OCP\Log\Audit\CriticalActionPerformedEvent;
 use OCP\Security\ICrypto;
 use OCP\Security\ISecureRandom;
 use Psr\Log\LoggerInterface;
@@ -33,6 +37,7 @@ class LoginFlowV2Service {
 		private ICrypto $crypto,
 		private LoggerInterface $logger,
 		private IProvider $tokenProvider,
+		private IEventDispatcher $eventDispatcher,
 	) {
 	}
 
@@ -62,8 +67,12 @@ class LoginFlowV2Service {
 		try {
 			// Decrypt the apptoken
 			$privateKey = $this->crypto->decrypt($data->getPrivateKey(), $pollToken);
-			$appPassword = $this->decryptPassword($data->getAppPassword(), $privateKey);
-		} catch (\Exception $e) {
+		} catch (\Exception) {
+			throw new LoginFlowV2NotFoundException('Apptoken could not be decrypted');
+		}
+
+		$appPassword = $this->decryptPassword($data->getAppPassword(), $privateKey);
+		if ($appPassword === null) {
 			throw new LoginFlowV2NotFoundException('Apptoken could not be decrypted');
 		}
 
@@ -74,18 +83,38 @@ class LoginFlowV2Service {
 	 * @param string $loginToken
 	 * @return LoginFlowV2
 	 * @throws LoginFlowV2NotFoundException
+	 * @throws LoginFlowV2ClientForbiddenException
 	 */
 	public function getByLoginToken(string $loginToken): LoginFlowV2 {
+		/** @var LoginFlowV2|null $flow */
+		$flow = null;
+
 		try {
-			return $this->mapper->getByLoginToken($loginToken);
+			$flow = $this->mapper->getByLoginToken($loginToken);
 		} catch (DoesNotExistException $e) {
 			throw new LoginFlowV2NotFoundException('Login token invalid');
 		}
+
+		$allowedAgents = $this->config->getSystemValue('core.login_flow_v2.allowed_user_agents', []);
+
+		if (empty($allowedAgents)) {
+			return $flow;
+		}
+
+		$flowClient = $flow->getClientName();
+
+		foreach ($allowedAgents as $allowedAgent) {
+			if (preg_match($allowedAgent, $flowClient) === 1) {
+				return $flow;
+			}
+		}
+
+		throw new LoginFlowV2ClientForbiddenException('Client not allowed');
 	}
 
 	/**
 	 * @param string $loginToken
-	 * @return bool returns true if the start was successfull. False if not.
+	 * @return bool returns true if the start was successful. False if not.
 	 */
 	public function startLoginFlow(string $loginToken): bool {
 		try {
@@ -127,7 +156,7 @@ class LoginFlowV2Service {
 		}
 
 		$appPassword = $this->random->generate(72, ISecureRandom::CHAR_UPPER . ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS);
-		$this->tokenProvider->generateToken(
+		$generatedToken = $this->tokenProvider->generateToken(
 			$appPassword,
 			$userId,
 			$loginName,
@@ -136,6 +165,12 @@ class LoginFlowV2Service {
 			IToken::PERMANENT_TOKEN,
 			IToken::DO_NOT_REMEMBER
 		);
+		$this->eventDispatcher->dispatchTyped(new CriticalActionPerformedEvent(
+			'App password with ID "%s" and name "%s" was created',
+			['tokenId' => $generatedToken->getId(), 'tokenName' => $generatedToken->getName()],
+			false,
+			'auth.app_password.created',
+		));
 
 		$data->setLoginName($loginName);
 		$data->setServer($server);
@@ -230,10 +265,10 @@ class LoginFlowV2Service {
 		return $encryptedPassword;
 	}
 
-	private function decryptPassword(string $encryptedPassword, string $privateKey): string {
+	private function decryptPassword(string $encryptedPassword, string $privateKey): ?string {
 		$encryptedPassword = base64_decode($encryptedPassword);
-		openssl_private_decrypt($encryptedPassword, $password, $privateKey, OPENSSL_PKCS1_OAEP_PADDING);
+		$success = openssl_private_decrypt($encryptedPassword, $password, $privateKey, OPENSSL_PKCS1_OAEP_PADDING);
 
-		return $password;
+		return $success ? $password : null;
 	}
 }

@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2018 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\TwoFactorBackupCodes\BackgroundJob;
 
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -17,34 +18,21 @@ use OCP\Notification\IManager;
 
 class RememberBackupCodesJob extends TimedJob {
 
-	/** @var IRegistry */
-	private $registry;
-
-	/** @var IUserManager */
-	private $userManager;
-
-	/** @var IManager */
-	private $notificationManager;
-
-	/** @var IJobList */
-	private $jobList;
-
-	public function __construct(IRegistry $registry,
-		IUserManager $userManager,
+	public function __construct(
+		private IRegistry $registry,
+		private IUserManager $userManager,
 		ITimeFactory $timeFactory,
-		IManager $notificationManager,
-		IJobList $jobList) {
+		private IManager $notificationManager,
+		private IJobList $jobList,
+	) {
 		parent::__construct($timeFactory);
-		$this->registry = $registry;
-		$this->userManager = $userManager;
 		$this->time = $timeFactory;
-		$this->notificationManager = $notificationManager;
-		$this->jobList = $jobList;
 
 		$this->setInterval(60 * 60 * 24 * 14);
 		$this->setTimeSensitivity(self::TIME_INSENSITIVE);
 	}
 
+	#[\Override]
 	protected function run($argument) {
 		$uid = $argument['uid'];
 		$user = $this->userManager->get($uid);

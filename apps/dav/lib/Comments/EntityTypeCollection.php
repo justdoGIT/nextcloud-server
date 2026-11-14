@@ -5,6 +5,7 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\Comments;
 
 use OCP\Comments\ICommentsManager;
@@ -26,19 +27,13 @@ use Sabre\DAV\Exception\NotFound;
  * @package OCA\DAV\Comments
  */
 class EntityTypeCollection extends RootCollection {
-	protected LoggerInterface $logger;
-	protected IUserManager $userManager;
-
-	/** @var \Closure */
-	protected $childExistsFunction;
-
 	public function __construct(
 		string $name,
 		ICommentsManager $commentsManager,
-		IUserManager $userManager,
+		protected IUserManager $userManager,
 		IUserSession $userSession,
-		LoggerInterface $logger,
-		\Closure $childExistsFunction,
+		protected LoggerInterface $logger,
+		protected \Closure $childExistsFunction,
 	) {
 		$name = trim($name);
 		if (empty($name)) {
@@ -46,10 +41,7 @@ class EntityTypeCollection extends RootCollection {
 		}
 		$this->name = $name;
 		$this->commentsManager = $commentsManager;
-		$this->logger = $logger;
-		$this->userManager = $userManager;
 		$this->userSession = $userSession;
-		$this->childExistsFunction = $childExistsFunction;
 	}
 
 	/**
@@ -62,6 +54,7 @@ class EntityTypeCollection extends RootCollection {
 	 * @return \Sabre\DAV\INode
 	 * @throws NotFound
 	 */
+	#[\Override]
 	public function getChild($name) {
 		if (!$this->childExists($name)) {
 			throw new NotFound('Entity does not exist or is not available');
@@ -82,6 +75,7 @@ class EntityTypeCollection extends RootCollection {
 	 * @return \Sabre\DAV\INode[]
 	 * @throws MethodNotAllowed
 	 */
+	#[\Override]
 	public function getChildren() {
 		throw new MethodNotAllowed('No permission to list folder contents');
 	}
@@ -92,6 +86,7 @@ class EntityTypeCollection extends RootCollection {
 	 * @param string $name
 	 * @return bool
 	 */
+	#[\Override]
 	public function childExists($name) {
 		return call_user_func($this->childExistsFunction, $name);
 	}

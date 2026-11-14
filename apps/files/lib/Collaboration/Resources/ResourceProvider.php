@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2018 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Files\Collaboration\Resources;
 
 use OCP\Collaboration\Resources\IProvider;
@@ -20,22 +21,14 @@ use OCP\IUser;
 class ResourceProvider implements IProvider {
 	public const RESOURCE_TYPE = 'file';
 
-	/** @var IRootFolder */
-	protected $rootFolder;
-	/** @var IPreview */
-	private $preview;
-	/** @var IURLGenerator */
-	private $urlGenerator;
+	/** @var array<int, Node> $nodes */
+	protected array $nodes = [];
 
-	/** @var array */
-	protected $nodes = [];
-
-	public function __construct(IRootFolder $rootFolder,
-		IPreview $preview,
-		IURLGenerator $urlGenerator) {
-		$this->rootFolder = $rootFolder;
-		$this->preview = $preview;
-		$this->urlGenerator = $urlGenerator;
+	public function __construct(
+		protected IRootFolder $rootFolder,
+		private IPreview $preview,
+		private IURLGenerator $urlGenerator,
+	) {
 	}
 
 	private function getNode(IResource $resource): ?Node {
@@ -55,6 +48,7 @@ class ResourceProvider implements IProvider {
 	 * @return array
 	 * @since 16.0.0
 	 */
+	#[\Override]
 	public function getResourceRichObject(IResource $resource): array {
 		if (isset($this->nodes[(int)$resource->getId()])) {
 			$node = $this->nodes[(int)$resource->getId()]->getPath();
@@ -89,15 +83,16 @@ class ResourceProvider implements IProvider {
 	 * @return bool
 	 * @since 16.0.0
 	 */
+	#[\Override]
 	public function canAccessResource(IResource $resource, ?IUser $user = null): bool {
 		if (!$user instanceof IUser) {
 			return false;
 		}
 
 		$userFolder = $this->rootFolder->getUserFolder($user->getUID());
-		$node = $userFolder->getById((int)$resource->getId());
+		$node = $userFolder->getFirstNodeById((int)$resource->getId());
 
-		if ($node) {
+		if ($node !== null) {
 			$this->nodes[(int)$resource->getId()] = $node;
 			return true;
 		}
@@ -111,6 +106,7 @@ class ResourceProvider implements IProvider {
 	 * @return string
 	 * @since 16.0.0
 	 */
+	#[\Override]
 	public function getType(): string {
 		return self::RESOURCE_TYPE;
 	}

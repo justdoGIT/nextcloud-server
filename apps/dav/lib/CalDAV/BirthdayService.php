@@ -7,6 +7,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\CalDAV;
 
 use Exception;
@@ -32,28 +33,17 @@ class BirthdayService {
 	public const BIRTHDAY_CALENDAR_URI = 'contact_birthdays';
 	public const EXCLUDE_FROM_BIRTHDAY_CALENDAR_PROPERTY_NAME = 'X-NC-EXCLUDE-FROM-BIRTHDAY-CALENDAR';
 
-	private GroupPrincipalBackend $principalBackend;
-	private CalDavBackend $calDavBackEnd;
-	private CardDavBackend $cardDavBackEnd;
-	private IConfig $config;
-	private IDBConnection $dbConnection;
-	private IL10N $l10n;
-
 	/**
 	 * BirthdayService constructor.
 	 */
-	public function __construct(CalDavBackend $calDavBackEnd,
-		CardDavBackend $cardDavBackEnd,
-		GroupPrincipalBackend $principalBackend,
-		IConfig $config,
-		IDBConnection $dbConnection,
-		IL10N $l10n) {
-		$this->calDavBackEnd = $calDavBackEnd;
-		$this->cardDavBackEnd = $cardDavBackEnd;
-		$this->principalBackend = $principalBackend;
-		$this->config = $config;
-		$this->dbConnection = $dbConnection;
-		$this->l10n = $l10n;
+	public function __construct(
+		private CalDavBackend $calDavBackEnd,
+		private CardDavBackend $cardDavBackEnd,
+		private GroupPrincipalBackend $principalBackend,
+		private IConfig $config,
+		private IDBConnection $dbConnection,
+		private IL10N $l10n,
+	) {
 	}
 
 	public function onCardChanged(int $addressBookId,
@@ -198,9 +188,9 @@ class BirthdayService {
 			$originalYear = (int)$dateParts['year'];
 		}
 
-		$leapDay = ((int)$dateParts['month'] === 2
-				&& (int)$dateParts['date'] === 29);
-		if ($dateParts['year'] === null || $originalYear < 1970) {
+		$leapDay = ((int)$dateParts['month'] === 2 && (int)$dateParts['date'] === 29);
+
+		if ($dateParts['year'] === null) {
 			$birthday = ($leapDay ? '1972-' : '1970-')
 				. $dateParts['month'] . '-' . $dateParts['date'];
 		}
@@ -228,7 +218,7 @@ class BirthdayService {
 		$vEvent->DTSTART['VALUE'] = 'DATE';
 		$vEvent->add('DTEND');
 
-		$dtEndDate = (new \DateTime())->setTimestamp($date->getTimeStamp());
+		$dtEndDate = \DateTime::createFromInterface($date);
 		$dtEndDate->add(new \DateInterval('P1D'));
 		$vEvent->DTEND->setDateTime(
 			$dtEndDate
@@ -293,6 +283,11 @@ class BirthdayService {
 	}
 
 	/**
+	 * The birthday event is considered changed if either
+	 *  - the start date has changed
+	 *  - the title has changed
+	 *  - the alarm was added, removed or its trigger has changed
+	 *
 	 * @param string $existingCalendarData
 	 * @param VCalendar $newCalendarData
 	 * @return bool
@@ -306,8 +301,9 @@ class BirthdayService {
 		}
 
 		return (
-			$newCalendarData->VEVENT->DTSTART->getValue() !== $existingBirthday->VEVENT->DTSTART->getValue() ||
-			$newCalendarData->VEVENT->SUMMARY->getValue() !== $existingBirthday->VEVENT->SUMMARY->getValue()
+			$newCalendarData->VEVENT->DTSTART->getValue() !== $existingBirthday->VEVENT->DTSTART->getValue()
+			|| $newCalendarData->VEVENT->SUMMARY->getValue() !== $existingBirthday->VEVENT->SUMMARY->getValue()
+			|| $newCalendarData->VEVENT->VALARM?->TRIGGER?->getValue() !== $existingBirthday->VEVENT->VALARM?->TRIGGER?->getValue()
 		);
 	}
 

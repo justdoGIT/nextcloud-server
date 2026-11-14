@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Files_Sharing;
 
 use OCP\AppFramework\Db\TTransactional;
@@ -13,7 +14,6 @@ use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\TimedJob;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
-use PDO;
 use Psr\Log\LoggerInterface;
 use function array_map;
 
@@ -24,29 +24,22 @@ class DeleteOrphanedSharesJob extends TimedJob {
 
 	use TTransactional;
 
-	private const CHUNK_SIZE = 1000;
+	private const int CHUNK_SIZE = 1000;
 
-	private const INTERVAL = 24 * 60 * 60; // 1 day
-
-	private IDBConnection $db;
-
-	private LoggerInterface $logger;
+	private const int INTERVAL = 24 * 60 * 60;
 
 	/**
 	 * sets the correct interval for this timed job
 	 */
 	public function __construct(
 		ITimeFactory $time,
-		IDBConnection $db,
-		LoggerInterface $logger,
+		private IDBConnection $db,
+		private LoggerInterface $logger,
 	) {
 		parent::__construct($time);
 
-		$this->db = $db;
-
 		$this->setInterval(self::INTERVAL); // 1 day
 		$this->setTimeSensitivity(self::TIME_INSENSITIVE);
-		$this->logger = $logger;
 	}
 
 	/**
@@ -54,6 +47,7 @@ class DeleteOrphanedSharesJob extends TimedJob {
 	 *
 	 * @param array $argument unused argument
 	 */
+	#[\Override]
 	public function run($argument) {
 		if ($this->db->getShardDefinition('filecache')) {
 			$this->shardingCleanup();
@@ -89,7 +83,7 @@ class DeleteOrphanedSharesJob extends TimedJob {
 		do {
 			$deleted = $this->atomic(function () use ($qbSelect, $deleteQb) {
 				$result = $qbSelect->executeQuery();
-				$ids = array_map('intval', $result->fetchAll(PDO::FETCH_COLUMN));
+				$ids = array_map('intval', $result->fetchFirstColumn());
 				$result->closeCursor();
 				$deleteQb->setParameter('ids', $ids, IQueryBuilder::PARAM_INT_ARRAY);
 				$deleted = $deleteQb->executeStatement();
@@ -106,7 +100,7 @@ class DeleteOrphanedSharesJob extends TimedJob {
 		$qb = $this->db->getQueryBuilder();
 		$qb->selectDistinct('file_source')
 			->from('share', 's');
-		$sourceFiles = $qb->executeQuery()->fetchAll(PDO::FETCH_COLUMN);
+		$sourceFiles = $qb->executeQuery()->fetchFirstColumn();
 
 		$deleteQb = $this->db->getQueryBuilder();
 		$deleteQb->delete('share')
@@ -134,7 +128,7 @@ class DeleteOrphanedSharesJob extends TimedJob {
 		$qb->select('fileid')
 			->from('filecache')
 			->where($qb->expr()->in('fileid', $qb->createNamedParameter($ids, IQueryBuilder::PARAM_INT_ARRAY)));
-		$found = $qb->executeQuery()->fetchAll(\PDO::FETCH_COLUMN);
+		$found = $qb->executeQuery()->fetchFirstColumn();
 		return array_diff($ids, $found);
 	}
 }

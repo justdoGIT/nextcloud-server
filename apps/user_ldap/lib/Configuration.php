@@ -5,8 +5,10 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\User_LDAP;
 
+use OCP\IConfig;
 use OCP\Server;
 use Psr\Log\LoggerInterface;
 
@@ -25,6 +27,7 @@ use Psr\Log\LoggerInterface;
  * @property string $ldapTLS
  * @property string $turnOffCertCheck
  * @property string $ldapIgnoreNamingRules
+ * @property string $ldapUserActiveState
  * @property string $ldapUserDisplayName
  * @property string $ldapUserDisplayName2
  * @property string $ldapUserAvatarRule
@@ -92,11 +95,6 @@ class Configuration {
 	public const LDAP_SERVER_FEATURE_UNKNOWN = 'unknown';
 	public const LDAP_SERVER_FEATURE_AVAILABLE = 'available';
 	public const LDAP_SERVER_FEATURE_UNAVAILABLE = 'unavailable';
-
-	/**
-	 * @var string
-	 */
-	protected $configPrefix;
 	/**
 	 * @var bool
 	 */
@@ -124,6 +122,7 @@ class Configuration {
 		'ldapTLS' => null,
 		'turnOffCertCheck' => null,
 		'ldapIgnoreNamingRules' => null,
+		'ldapUserActiveState' => null,
 		'ldapUserDisplayName' => null,
 		'ldapUserDisplayName2' => null,
 		'ldapUserAvatarRule' => null,
@@ -185,8 +184,10 @@ class Configuration {
 		'ldapAttributePronouns' => null,
 	];
 
-	public function __construct(string $configPrefix, bool $autoRead = true) {
-		$this->configPrefix = $configPrefix;
+	public function __construct(
+		protected string $configPrefix,
+		bool $autoRead = true,
+	) {
 		if ($autoRead) {
 			$this->readConfiguration();
 		}
@@ -236,7 +237,9 @@ class Configuration {
 
 			$setMethod = 'setValue';
 			switch ($key) {
+				case 'ldapAgentName':
 				case 'ldapAgentPassword':
+					$val = \filter_var($val, FILTER_UNSAFE_RAW, FILTER_FLAG_STRIP_LOW);
 					$setMethod = 'setRawValue';
 					break;
 				case 'homeFolderNamingRule':
@@ -442,17 +445,13 @@ class Configuration {
 
 	protected function getSystemValue(string $varName): string {
 		//FIXME: if another system value is added, softcode the default value
-		return \OC::$server->getConfig()->getSystemValue($varName, false);
+		return Server::get(IConfig::class)->getSystemValue($varName, false);
 	}
 
 	protected function getValue(string $varName): string {
-		static $defaults;
-		if (is_null($defaults)) {
-			$defaults = $this->getDefaults();
-		}
-		return \OC::$server->getConfig()->getAppValue('user_ldap',
+		return Server::get(IConfig::class)->getAppValue('user_ldap',
 			$this->configPrefix . $varName,
-			$defaults[$varName]);
+			$this->getDefaults()[$varName]);
 	}
 
 	/**
@@ -479,7 +478,7 @@ class Configuration {
 	}
 
 	protected function saveValue(string $varName, string $value): bool {
-		\OC::$server->getConfig()->setAppValue(
+		Server::get(IConfig::class)->setAppValue(
 			'user_ldap',
 			$this->configPrefix . $varName,
 			$value
@@ -506,6 +505,7 @@ class Configuration {
 			'ldap_base_users' => '',
 			'ldap_base_groups' => '',
 			'ldap_userlist_filter' => '',
+			'ldap_user_active_state' => '',
 			'ldap_user_filter_mode' => 0,
 			'ldap_userfilter_objectclass' => '',
 			'ldap_userfilter_groups' => '',
@@ -573,7 +573,7 @@ class Configuration {
 	 */
 	public function getConfigTranslationArray(): array {
 		//TODO: merge them into one representation
-		static $array = [
+		return [
 			'ldap_host' => 'ldapHost',
 			'ldap_port' => 'ldapPort',
 			'ldap_backup_host' => 'ldapBackupHost',
@@ -589,6 +589,7 @@ class Configuration {
 			'ldap_userfilter_objectclass' => 'ldapUserFilterObjectclass',
 			'ldap_userfilter_groups' => 'ldapUserFilterGroups',
 			'ldap_userlist_filter' => 'ldapUserFilter',
+			'ldap_user_active_state' => 'ldapUserActiveState',
 			'ldap_user_filter_mode' => 'ldapUserFilterMode',
 			'ldap_user_avatar_rule' => 'ldapUserAvatarRule',
 			'ldap_login_filter' => 'ldapLoginFilter',
@@ -646,7 +647,6 @@ class Configuration {
 			'ldap_attr_anniversarydate' => 'ldapAttributeAnniversaryDate',
 			'ldap_attr_pronouns' => 'ldapAttributePronouns',
 		];
-		return $array;
 	}
 
 	/**

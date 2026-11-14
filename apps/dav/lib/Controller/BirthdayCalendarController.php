@@ -1,8 +1,10 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2017 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Controller;
 
 use OCA\DAV\BackgroundJob\GenerateBirthdayCalendarBackgroundJob;
@@ -13,38 +15,15 @@ use OCP\AppFramework\Http\Attribute\AuthorizedAdminSetting;
 use OCP\AppFramework\Http\JSONResponse;
 use OCP\AppFramework\Http\Response;
 use OCP\BackgroundJob\IJobList;
+use OCP\EventDispatcher\IEventDispatcher;
 use OCP\IConfig;
 use OCP\IDBConnection;
 use OCP\IRequest;
 use OCP\IUser;
 use OCP\IUserManager;
+use OCP\Log\Audit\CriticalActionPerformedEvent;
 
 class BirthdayCalendarController extends Controller {
-
-	/**
-	 * @var IDBConnection
-	 */
-	protected $db;
-
-	/**
-	 * @var IConfig
-	 */
-	protected $config;
-
-	/**
-	 * @var IUserManager
-	 */
-	protected $userManager;
-
-	/**
-	 * @var CalDavBackend
-	 */
-	protected $caldavBackend;
-
-	/**
-	 * @var IJobList
-	 */
-	protected $jobList;
 
 	/**
 	 * BirthdayCalendar constructor.
@@ -55,19 +34,20 @@ class BirthdayCalendarController extends Controller {
 	 * @param IConfig $config
 	 * @param IJobList $jobList
 	 * @param IUserManager $userManager
-	 * @param CalDavBackend $calDavBackend
+	 * @param CalDavBackend $caldavBackend
+	 * @param IEventDispatcher $eventDispatcher
 	 */
-	public function __construct($appName, IRequest $request,
-		IDBConnection $db, IConfig $config,
-		IJobList $jobList,
-		IUserManager $userManager,
-		CalDavBackend $calDavBackend) {
+	public function __construct(
+		$appName,
+		IRequest $request,
+		protected IDBConnection $db,
+		protected IConfig $config,
+		protected IJobList $jobList,
+		protected IUserManager $userManager,
+		protected CalDavBackend $caldavBackend,
+		protected IEventDispatcher $eventDispatcher,
+	) {
 		parent::__construct($appName, $request);
-		$this->db = $db;
-		$this->config = $config;
-		$this->userManager = $userManager;
-		$this->jobList = $jobList;
-		$this->caldavBackend = $calDavBackend;
 	}
 
 	/**
@@ -84,6 +64,13 @@ class BirthdayCalendarController extends Controller {
 			]);
 		});
 
+		$this->eventDispatcher->dispatchTyped(new CriticalActionPerformedEvent(
+			'Birthday calendars were enabled',
+			[],
+			false,
+			'dav.birthday_calendar.enabled',
+		));
+
 		return new JSONResponse([]);
 	}
 
@@ -96,6 +83,13 @@ class BirthdayCalendarController extends Controller {
 
 		$this->jobList->remove(GenerateBirthdayCalendarBackgroundJob::class);
 		$this->caldavBackend->deleteAllBirthdayCalendars();
+
+		$this->eventDispatcher->dispatchTyped(new CriticalActionPerformedEvent(
+			'Birthday calendars were disabled',
+			[],
+			false,
+			'dav.birthday_calendar.disabled',
+		));
 
 		return new JSONResponse([]);
 	}

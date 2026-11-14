@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2018 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Direct;
 
 use OCA\DAV\Connector\Sabre\MaintenancePlugin;
@@ -20,17 +21,15 @@ use OCP\L10N\IFactory;
 use OCP\Security\Bruteforce\IThrottler;
 
 class ServerFactory {
-	/** @var IConfig */
-	private $config;
 	/** @var IL10N */
 	private $l10n;
-	/** @var IEventDispatcher */
-	private $eventDispatcher;
 
-	public function __construct(IConfig $config, IFactory $l10nFactory, IEventDispatcher $eventDispatcher) {
-		$this->config = $config;
+	public function __construct(
+		private IConfig $config,
+		IFactory $l10nFactory,
+		private IEventDispatcher $eventDispatcher,
+	) {
 		$this->l10n = $l10nFactory->get('dav');
-		$this->eventDispatcher = $eventDispatcher;
 	}
 
 	public function createServer(string $baseURI,

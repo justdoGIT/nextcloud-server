@@ -1,25 +1,33 @@
-/**
+/*!
  * SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-import { Permission, Node, View, FileAction } from '@nextcloud/files'
-import { showInfo } from '@nextcloud/dialogs'
-import { translate as t } from '@nextcloud/l10n'
-import PQueue from 'p-queue'
+
+import type { IFileAction } from '@nextcloud/files'
+import type { TriggeredActionContext } from '../utils/actionUtils.ts'
 
 import CloseSvg from '@mdi/svg/svg/close.svg?raw'
 import NetworkOffSvg from '@mdi/svg/svg/network-off.svg?raw'
-import TrashCanSvg from '@mdi/svg/svg/trash-can.svg?raw'
+import TrashCanSvg from '@mdi/svg/svg/trash-can-outline.svg?raw'
+import { Permission } from '@nextcloud/files'
+import { loadState } from '@nextcloud/initial-state'
+import { t } from '@nextcloud/l10n'
+import PQueue from 'p-queue'
+import { logger } from '../utils/logger.ts'
+import { askConfirmation, canDisconnectOnly, canUnshareOnly, deleteNode, displayName, shouldAskForConfirmation } from './deleteUtils.ts'
 
-import logger from '../logger.ts'
-import { askConfirmation, canDisconnectOnly, canUnshareOnly, deleteNode, displayName, isTrashbinEnabled } from './deleteUtils'
+// TODO: once the files app is migrated to the new frontend use the import instead:
+// import { TRASHBIN_VIEW_ID } from '../../../files_trashbin/src/files_views/trashbinView.ts'
+const TRASHBIN_VIEW_ID = 'trashbin'
 
 const queue = new PQueue({ concurrency: 5 })
 
-export const action = new FileAction({
-	id: 'delete',
+export const ACTION_DELETE = 'delete'
+
+export const action: IFileAction = {
+	id: ACTION_DELETE,
 	displayName,
-	iconSvgInline: (nodes: Node[]) => {
+	iconSvgInline: ({ nodes }) => {
 		if (canUnshareOnly(nodes)) {
 			return CloseSvg
 		}
@@ -31,41 +39,46 @@ export const action = new FileAction({
 		return TrashCanSvg
 	},
 
-	enabled(nodes: Node[]) {
+	enabled({ nodes, view }) {
+		if (view.id === TRASHBIN_VIEW_ID) {
+			const config = loadState('files_trashbin', 'config', { allow_delete: true })
+			if (config.allow_delete === false) {
+				return false
+			}
+		}
+
 		return nodes.length > 0 && nodes
-			.map(node => node.permissions)
-			.every(permission => (permission & Permission.DELETE) !== 0)
+			.map((node) => node.permissions)
+			.every((permission) => (permission & Permission.DELETE) !== 0)
 	},
 
-	async exec(node: Node, view: View) {
+	async exec({ nodes, view, trigger }: TriggeredActionContext) {
 		try {
 			let confirm = true
 
-			// If trashbin is disabled, we need to ask for confirmation
-			if (!isTrashbinEnabled()) {
-				confirm = await askConfirmation([node], view)
+			// Deleting via the hotkey is easy to trigger by accident, so always confirm it
+			if (shouldAskForConfirmation() || trigger === 'hotkey') {
+				confirm = await askConfirmation([nodes[0]], view)
 			}
 
 			// If the user cancels the deletion, we don't want to do anything
 			if (confirm === false) {
-				showInfo(t('files', 'Deletion cancelled'))
 				return null
 			}
 
-			await deleteNode(node)
+			await deleteNode(nodes[0])
 
 			return true
 		} catch (error) {
-			logger.error('Error while deleting a file', { error, source: node.source, node })
+			logger.error('Error while deleting a file', { error, source: nodes[0].source, node: nodes[0] })
 			return false
 		}
 	},
 
-	async execBatch(nodes: Node[], view: View): Promise<(boolean | null)[]> {
+	async execBatch({ nodes, view }) {
 		let confirm = true
 
-		// If trashbin is disabled, we need to ask for confirmation
-		if (!isTrashbinEnabled()) {
+		if (shouldAskForConfirmation()) {
 			confirm = await askConfirmation(nodes, view)
 		} else if (nodes.length >= 5 && !canUnshareOnly(nodes) && !canDisconnectOnly(nodes)) {
 			confirm = await askConfirmation(nodes, view)
@@ -73,14 +86,13 @@ export const action = new FileAction({
 
 		// If the user cancels the deletion, we don't want to do anything
 		if (confirm === false) {
-			showInfo(t('files', 'Deletion cancelled'))
 			return Promise.all(nodes.map(() => null))
 		}
 
 		// Map each node to a promise that resolves with the result of exec(node)
-		const promises = nodes.map(node => {
-		    // Create a promise that resolves with the result of exec(node)
-		    const promise = new Promise<boolean>(resolve => {
+		const promises = nodes.map((node) => {
+			// Create a promise that resolves with the result of exec(node)
+			const promise = new Promise<boolean>((resolve) => {
 				queue.add(async () => {
 					try {
 						await deleteNode(node)
@@ -97,5 +109,11 @@ export const action = new FileAction({
 		return Promise.all(promises)
 	},
 
+	destructive: true,
 	order: 100,
-})
+
+	hotkey: {
+		description: t('files', 'Delete'),
+		key: 'Delete',
+	},
+}

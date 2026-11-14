@@ -1,10 +1,13 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\FederatedFileSharing\Settings;
 
+use OCA\FederatedFileSharing\AppInfo\Application;
 use OCA\FederatedFileSharing\FederatedShareProvider;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\AppFramework\Services\IInitialState;
@@ -12,34 +15,25 @@ use OCP\GlobalScale\IConfig;
 use OCP\IL10N;
 use OCP\IURLGenerator;
 use OCP\Settings\IDelegatedSettings;
+use OCP\Util;
 
 class Admin implements IDelegatedSettings {
-	private FederatedShareProvider $fedShareProvider;
-	private IConfig $gsConfig;
-	private IL10N $l;
-	private IURLGenerator $urlGenerator;
-	private IInitialState $initialState;
-
 	/**
 	 * Admin constructor.
 	 */
 	public function __construct(
-		FederatedShareProvider $fedShareProvider,
-		IConfig $globalScaleConfig,
-		IL10N $l,
-		IURLGenerator $urlGenerator,
-		IInitialState $initialState,
+		private FederatedShareProvider $fedShareProvider,
+		private IConfig $gsConfig,
+		private IL10N $l,
+		private IURLGenerator $urlGenerator,
+		private IInitialState $initialState,
 	) {
-		$this->fedShareProvider = $fedShareProvider;
-		$this->gsConfig = $globalScaleConfig;
-		$this->l = $l;
-		$this->urlGenerator = $urlGenerator;
-		$this->initialState = $initialState;
 	}
 
 	/**
 	 * @return TemplateResponse
 	 */
+	#[\Override]
 	public function getForm() {
 
 		$this->initialState->provideInitialState('internalOnly', $this->gsConfig->onlyInternalFederation());
@@ -51,13 +45,17 @@ class Admin implements IDelegatedSettings {
 		$this->initialState->provideInitialState('incomingServer2serverGroupShareEnabled', $this->fedShareProvider->isIncomingServer2serverGroupShareEnabled());
 		$this->initialState->provideInitialState('lookupServerEnabled', $this->fedShareProvider->isLookupServerQueriesEnabled());
 		$this->initialState->provideInitialState('lookupServerUploadEnabled', $this->fedShareProvider->isLookupServerUploadEnabled());
+		$this->initialState->provideInitialState('federatedTrustedShareAutoAccept', $this->fedShareProvider->isFederatedTrustedShareAutoAccept());
 
-		return new TemplateResponse('federatedfilesharing', 'settings-admin', [], '');
+		Util::addStyle(Application::APP_ID, 'settings-admin');
+		Util::addScript(Application::APP_ID, 'settings-admin');
+		return new TemplateResponse(Application::APP_ID, 'settings-admin', renderAs: '');
 	}
 
 	/**
 	 * @return string the section ID, e.g. 'sharing'
 	 */
+	#[\Override]
 	public function getSection() {
 		return 'sharing';
 	}
@@ -69,14 +67,17 @@ class Admin implements IDelegatedSettings {
 	 *
 	 * E.g.: 70
 	 */
+	#[\Override]
 	public function getPriority() {
 		return 20;
 	}
 
+	#[\Override]
 	public function getName(): ?string {
 		return $this->l->t('Federated Cloud Sharing');
 	}
 
+	#[\Override]
 	public function getAuthorizedAppConfig(): array {
 		return [
 			'files_sharing' => [
@@ -87,6 +88,7 @@ class Admin implements IDelegatedSettings {
 				'incomingServer2serverGroupShareEnabled',
 				'lookupServerEnabled',
 				'lookupServerUploadEnabled',
+				'federatedTrustedShareAutoAccept',
 			],
 		];
 	}

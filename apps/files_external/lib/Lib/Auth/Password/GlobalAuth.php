@@ -1,9 +1,11 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2016-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2015 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Files_External\Lib\Auth\Password;
 
 use OCA\Files_External\Lib\Auth\AuthMechanism;
@@ -19,14 +21,12 @@ use OCP\Security\ICredentialsManager;
  */
 class GlobalAuth extends AuthMechanism {
 	public const CREDENTIALS_IDENTIFIER = 'password::global';
-	private const PWD_PLACEHOLDER = '************************';
+	private const string PWD_PLACEHOLDER = '************************';
 
-	/** @var ICredentialsManager */
-	protected $credentialsManager;
-
-	public function __construct(IL10N $l, ICredentialsManager $credentialsManager) {
-		$this->credentialsManager = $credentialsManager;
-
+	public function __construct(
+		IL10N $l,
+		protected ICredentialsManager $credentialsManager,
+	) {
 		$this
 			->setIdentifier('password::global')
 			->setVisibility(BackendService::VISIBILITY_DEFAULT)
@@ -63,6 +63,7 @@ class GlobalAuth extends AuthMechanism {
 	/**
 	 * @return void
 	 */
+	#[\Override]
 	public function manipulateStorageConfig(StorageConfig &$storage, ?IUser $user = null) {
 		if ($storage->getType() === StorageConfig::MOUNT_TYPE_ADMIN) {
 			$uid = '';

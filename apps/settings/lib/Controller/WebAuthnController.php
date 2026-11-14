@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2020 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Settings\Controller;
 
 use OC\Authentication\WebAuthn\Manager;
@@ -14,19 +15,22 @@ use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
+use OCP\AppFramework\Http\Attribute\NoSubAdminRequired;
 use OCP\AppFramework\Http\Attribute\OpenAPI;
 use OCP\AppFramework\Http\Attribute\PasswordConfirmationRequired;
 use OCP\AppFramework\Http\Attribute\UseSession;
 use OCP\AppFramework\Http\JSONResponse;
+use OCP\EventDispatcher\IEventDispatcher;
 use OCP\IRequest;
 use OCP\ISession;
 use OCP\IUserSession;
+use OCP\Log\Audit\CriticalActionPerformedEvent;
 use Psr\Log\LoggerInterface;
 use Webauthn\PublicKeyCredentialCreationOptions;
 
 #[OpenAPI(scope: OpenAPI::SCOPE_IGNORE)]
 class WebAuthnController extends Controller {
-	private const WEBAUTHN_REGISTRATION = 'webauthn_registration';
+	private const string WEBAUTHN_REGISTRATION = 'webauthn_registration';
 
 	public function __construct(
 		IRequest $request,
@@ -34,13 +38,12 @@ class WebAuthnController extends Controller {
 		private Manager $manager,
 		private IUserSession $userSession,
 		private ISession $session,
+		private IEventDispatcher $eventDispatcher,
 	) {
 		parent::__construct(Application::APP_ID, $request);
 	}
 
-	/**
-	 * @NoSubAdminRequired
-	 */
+	#[NoSubAdminRequired]
 	#[NoAdminRequired]
 	#[PasswordConfirmationRequired]
 	#[UseSession]
@@ -56,9 +59,7 @@ class WebAuthnController extends Controller {
 		return new JSONResponse($credentialOptions);
 	}
 
-	/**
-	 * @NoSubAdminRequired
-	 */
+	#[NoSubAdminRequired]
 	#[NoAdminRequired]
 	#[PasswordConfirmationRequired]
 	#[UseSession]
@@ -75,18 +76,30 @@ class WebAuthnController extends Controller {
 
 		$this->session->remove(self::WEBAUTHN_REGISTRATION);
 
-		return new JSONResponse($this->manager->finishRegister($publicKeyCredentialCreationOptions, $name, $data));
+		$credential = $this->manager->finishRegister($publicKeyCredentialCreationOptions, $name, $data);
+		$this->eventDispatcher->dispatchTyped(new CriticalActionPerformedEvent(
+			'WebAuthn device with ID "%s" was added',
+			['deviceId' => $credential->getId()],
+			false,
+			'auth.webauthn_device.added',
+		));
+
+		return new JSONResponse($credential);
 	}
 
-	/**
-	 * @NoSubAdminRequired
-	 */
+	#[NoSubAdminRequired]
 	#[NoAdminRequired]
 	#[PasswordConfirmationRequired]
 	public function deleteRegistration(int $id): JSONResponse {
 		$this->logger->debug('Finishing WebAuthn registration');
 
 		$this->manager->deleteRegistration($this->userSession->getUser(), $id);
+		$this->eventDispatcher->dispatchTyped(new CriticalActionPerformedEvent(
+			'WebAuthn device with ID "%s" was removed',
+			['deviceId' => $id],
+			false,
+			'auth.webauthn_device.removed',
+		));
 
 		return new JSONResponse([]);
 	}

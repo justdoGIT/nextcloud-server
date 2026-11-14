@@ -16,16 +16,17 @@ use OCP\Migration\IRepairStep;
 
 class InitBackgroundImagesMigration implements IRepairStep {
 
-	private IJobList $jobList;
-
-	public function __construct(IJobList $jobList) {
-		$this->jobList = $jobList;
+	public function __construct(
+		private IJobList $jobList,
+	) {
 	}
 
+	#[\Override]
 	public function getName() {
 		return 'Initialize migration of background images from dashboard to theming app';
 	}
 
+	#[\Override]
 	public function run(IOutput $output) {
 		$this->jobList->add(MigrateBackgroundImages::class, ['stage' => MigrateBackgroundImages::STAGE_PREPARE]);
 	}

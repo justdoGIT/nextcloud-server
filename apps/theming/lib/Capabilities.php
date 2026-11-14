@@ -1,14 +1,18 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Theming;
 
 use OCA\Theming\AppInfo\Application;
 use OCA\Theming\Service\BackgroundService;
+use OCA\Theming\Service\ThemesService;
 use OCP\Capabilities\IPublicCapability;
-use OCP\IConfig;
+use OCP\Config\IUserConfig;
+use OCP\IAppConfig;
 use OCP\IURLGenerator;
 use OCP\IUser;
 use OCP\IUserSession;
@@ -20,32 +24,22 @@ use OCP\IUserSession;
  */
 class Capabilities implements IPublicCapability {
 
-	/** @var ThemingDefaults */
-	protected $theming;
-
-	/** @var Util */
-	protected $util;
-
-	/** @var IURLGenerator */
-	protected $url;
-
-	/** @var IConfig */
-	protected $config;
-
-	protected IUserSession $userSession;
-
 	/**
-	 * @param ThemingDefaults $theming
-	 * @param Util $util
-	 * @param IURLGenerator $url
-	 * @param IConfig $config
+	 * Allowed toast timeout values in milliseconds.
+	 *
+	 * @var list<int>
 	 */
-	public function __construct(ThemingDefaults $theming, Util $util, IURLGenerator $url, IConfig $config, IUserSession $userSession) {
-		$this->theming = $theming;
-		$this->util = $util;
-		$this->url = $url;
-		$this->config = $config;
-		$this->userSession = $userSession;
+	public const array TOAST_TIMEOUT_VALUES = [ConfigLexicon::TOAST_TIMEOUT_DEFAULT, 15000, 30000, -1];
+
+	public function __construct(
+		protected ThemingDefaults $theming,
+		protected Util $util,
+		protected IURLGenerator $url,
+		protected IAppConfig $appConfig,
+		protected IUserConfig $userConfig,
+		protected IUserSession $userSession,
+		protected ThemesService $themesService,
+	) {
 	}
 
 	/**
@@ -54,7 +48,10 @@ class Capabilities implements IPublicCapability {
 	 * @return array{
 	 *     theming: array{
 	 *         name: string,
+	 *         productName: string,
 	 *         url: string,
+	 *         imprintUrl: string,
+	 *         privacyUrl: string,
 	 *         slogan: string,
 	 *         color: string,
 	 *         color-text: string,
@@ -68,14 +65,24 @@ class Capabilities implements IPublicCapability {
 	 *         background-default: bool,
 	 *         logoheader: string,
 	 *         favicon: string,
+	 *         primaryColor: string,
+	 *         backgroundColor: string,
+	 *         defaultPrimaryColor: string,
+	 *         defaultBackgroundColor: string,
+	 *         inverted: bool,
+	 *         cacheBuster: string,
+	 *         enabledThemes: list<string>,
+	 *         toastTimeout: int,
+	 *         toastTimeoutValues: list<int>,
 	 *     },
 	 * }
 	 */
+	#[\Override]
 	public function getCapabilities() {
 		$color = $this->theming->getDefaultColorPrimary();
 		$colorText = $this->util->invertTextColor($color) ? '#000000' : '#ffffff';
 
-		$backgroundLogo = $this->config->getAppValue('theming', 'backgroundMime', '');
+		$backgroundLogo = $this->appConfig->getValueString('theming', 'backgroundMime', '');
 		$backgroundColor = $this->theming->getColorBackground();
 		$backgroundText = $this->theming->getTextColorBackground();
 		$backgroundPlain = $backgroundLogo === 'backgroundColor' || ($backgroundLogo === '' && $backgroundColor !== BackgroundService::DEFAULT_COLOR);
@@ -91,7 +98,7 @@ class Capabilities implements IPublicCapability {
 			$color = $this->theming->getColorPrimary();
 			$colorText = $this->theming->getTextColorPrimary();
 
-			$backgroundImage = $this->config->getUserValue($user->getUID(), Application::APP_ID, 'background_image', BackgroundService::BACKGROUND_DEFAULT);
+			$backgroundImage = $this->userConfig->getValueString($user->getUID(), Application::APP_ID, 'background_image', BackgroundService::BACKGROUND_DEFAULT);
 			if ($backgroundImage === BackgroundService::BACKGROUND_CUSTOM) {
 				$backgroundPlain = false;
 				$background = $this->url->linkToRouteAbsolute('theming.userTheme.getBackground');
@@ -107,7 +114,10 @@ class Capabilities implements IPublicCapability {
 		return [
 			'theming' => [
 				'name' => $this->theming->getName(),
+				'productName' => $this->theming->getProductName(),
 				'url' => $this->theming->getBaseUrl(),
+				'imprintUrl' => $this->theming->getImprintUrl(),
+				'privacyUrl' => $this->theming->getPrivacyUrl(),
 				'slogan' => $this->theming->getSlogan(),
 				'color' => $color,
 				'color-text' => $colorText,
@@ -121,7 +131,33 @@ class Capabilities implements IPublicCapability {
 				'background-default' => !$this->util->isBackgroundThemed(),
 				'logoheader' => $this->url->getAbsoluteURL($this->theming->getLogo()),
 				'favicon' => $this->url->getAbsoluteURL($this->theming->getLogo()),
+				'primaryColor' => $color,
+				'backgroundColor' => $backgroundColor,
+				'defaultPrimaryColor' => $this->theming->getDefaultColorPrimary(),
+				'defaultBackgroundColor' => $this->theming->getDefaultColorBackground(),
+				'inverted' => $this->util->invertTextColor($color),
+				'cacheBuster' => $this->util->getCacheBuster(),
+				'enabledThemes' => $this->themesService->getEnabledThemes(),
+				'toastTimeout' => $this->getToastTimeout($user),
+				'toastTimeoutValues' => self::TOAST_TIMEOUT_VALUES,
 			],
 		];
+	}
+
+	/**
+	 * Resolve the effective toast timeout for the given user.
+	 *
+	 * Uses the config lexicon default and falls back when an invalid value is stored.
+	 */
+	private function getToastTimeout(?IUser $user): int {
+		if ($user instanceof IUser) {
+			// Config lexicon provides the default when the preference is unset.
+			$value = $this->userConfig->getValueInt($user->getUID(), Application::APP_ID, ConfigLexicon::TOAST_TIMEOUT);
+			if (in_array($value, self::TOAST_TIMEOUT_VALUES, true)) {
+				return $value;
+			}
+		}
+
+		return ConfigLexicon::TOAST_TIMEOUT_DEFAULT;
 	}
 }

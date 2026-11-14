@@ -5,6 +5,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2022 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCP;
 
 use Psr\Container\ContainerExceptionInterface;
@@ -15,6 +16,7 @@ use Psr\Container\NotFoundExceptionInterface;
  * use whenever possible dependency injections instead.
  *
  * ```php
+ * use OCP\ITagManager;
  * use OCP\Server;
  *
  * $tagManager = Server::get(ITagManager::class);
@@ -24,12 +26,9 @@ use Psr\Container\NotFoundExceptionInterface;
  */
 final class Server {
 	/**
-	 * @template T
-	 * @param class-string<T>|string $serviceName
-	 * @return T|mixed
-	 * @psalm-template S as class-string<T>|string
-	 * @psalm-param S $serviceName
-	 * @psalm-return (S is class-string<T> ? T : mixed)
+	 * @psalm-template T
+	 * @psalm-param class-string<T>|string $serviceName
+	 * @psalm-return ($serviceName is class-string<T> ? T : mixed)
 	 * @throws ContainerExceptionInterface
 	 * @throws NotFoundExceptionInterface
 	 * @since 25.0.0

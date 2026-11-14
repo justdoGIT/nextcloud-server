@@ -26,8 +26,10 @@ use OCP\AppFramework\OCS\OCSException;
 use OCP\AppFramework\OCS\OCSForbiddenException;
 use OCP\AppFramework\OCS\OCSNotFoundException;
 use OCP\AppFramework\OCSController;
+use OCP\EventDispatcher\IEventDispatcher;
 use OCP\IRequest;
 use OCP\ISession;
+use OCP\Log\Audit\CriticalActionPerformedEvent;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -42,6 +44,7 @@ class WebhooksController extends OCSController {
 		private WebhookListenerMapper $mapper,
 		private ?string $userId,
 		private ISession $session,
+		private IEventDispatcher $eventDispatcher,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -50,7 +53,7 @@ class WebhooksController extends OCSController {
 	 * List registered webhooks
 	 *
 	 * @param string|null $uri The callback URI to filter by
-	 * @return DataResponse<Http::STATUS_OK, WebhookListenersWebhookInfo[], array{}>
+	 * @return DataResponse<Http::STATUS_OK, list<WebhookListenersWebhookInfo>, array{}>
 	 * @throws OCSException Other internal error
 	 *
 	 * 200: Webhook registrations returned
@@ -66,12 +69,10 @@ class WebhooksController extends OCSController {
 				$webhookListeners = $this->mapper->getAll();
 			}
 
-			return new DataResponse(
-				array_map(
-					fn (WebhookListener $listener): array => $listener->jsonSerialize(),
-					$webhookListeners
-				)
-			);
+			return new DataResponse(array_values(array_map(
+				fn (WebhookListener $listener): array => $listener->jsonSerialize(),
+				$webhookListeners
+			)));
 		} catch (\Exception $e) {
 			$this->logger->error('Error when listing webhooks', ['exception' => $e]);
 			throw new OCSException('An internal error occurred', Http::STATUS_INTERNAL_SERVER_ERROR, $e);
@@ -112,8 +113,13 @@ class WebhooksController extends OCSController {
 	 * @param ?array<string,mixed> $eventFilter Mongo filter to apply to the serialized data to decide if firing
 	 * @param ?string $userIdFilter User id to filter on. The webhook will only be called by requests from this user. Empty or null means no filtering.
 	 * @param ?array<string,string> $headers Array of headers to send
-	 * @param "none"|"headers"|null $authMethod Authentication method to use
+	 * @param "none"|"header"|null $authMethod Authentication method to use
 	 * @param ?array<string,mixed> $authData Array of data for authentication
+	 * @param ?array{user_ids?:list<string>,user_roles?:list<string>} $tokenNeeded
+	 *                                                                             List of user ids for which to include auth tokens in the event.
+	 *                                                                             Has two fields: "user_ids" list of user uids for which tokens are needed, "user_roles" list of roles (users not defined by their ID but by the role they have in the webhook event) for which tokens can be included.
+	 *                                                                             Possible roles: "owner" for the user creating the webhook, "trigger" for the user triggering the webhook call.
+	 *                                                                             Requested auth tokens are valid for 1 hour after receiving them in the event call request.
 	 *
 	 * @return DataResponse<Http::STATUS_OK, WebhookListenersWebhookInfo, array{}>
 	 *
@@ -136,10 +142,11 @@ class WebhooksController extends OCSController {
 		?string $authMethod,
 		#[\SensitiveParameter]
 		?array $authData,
+		?array $tokenNeeded = null,
 	): DataResponse {
 		$appId = null;
 		if ($this->session->get('app_api') === true) {
-			$appId = $this->request->getHeader('EX-APP-ID');
+			$appId = $this->request->getHeader('ex-app-id');
 		}
 		try {
 			$authMethod = AuthMethod::from($authMethod ?? AuthMethod::None->value);
@@ -158,7 +165,9 @@ class WebhooksController extends OCSController {
 				$headers,
 				$authMethod,
 				$authData,
+				$tokenNeeded,
 			);
+			$this->dispatchWebhookAuditEvent('created', $webhookListener);
 			return new DataResponse($webhookListener->jsonSerialize());
 		} catch (\UnexpectedValueException $e) {
 			throw new OCSBadRequestException($e->getMessage(), $e);
@@ -180,8 +189,13 @@ class WebhooksController extends OCSController {
 	 * @param ?array<string,mixed> $eventFilter Mongo filter to apply to the serialized data to decide if firing
 	 * @param ?string $userIdFilter User id to filter on. The webhook will only be called by requests from this user. Empty or null means no filtering.
 	 * @param ?array<string,string> $headers Array of headers to send
-	 * @param "none"|"headers"|null $authMethod Authentication method to use
+	 * @param "none"|"header"|null $authMethod Authentication method to use
 	 * @param ?array<string,mixed> $authData Array of data for authentication
+	 * @param ?array{user_ids?:list<string>,user_roles?:list<string>} $tokenNeeded
+	 *                                                                             List of user ids for which to include auth tokens in the event.
+	 *                                                                             Has two fields: "user_ids" list of user uids for which tokens are needed, "user_roles" list of roles (users not defined by their ID but by the role they have in the webhook event) for which tokens can be included.
+	 *                                                                             Possible roles: "owner" for the user creating the webhook, "trigger" for the user triggering the webhook call.
+	 *                                                                             Requested auth tokens are valid for 1 hour after receiving them in the event call request.
 	 *
 	 * @return DataResponse<Http::STATUS_OK, WebhookListenersWebhookInfo, array{}>
 	 *
@@ -205,10 +219,11 @@ class WebhooksController extends OCSController {
 		?string $authMethod,
 		#[\SensitiveParameter]
 		?array $authData,
+		?array $tokenNeeded = null,
 	): DataResponse {
 		$appId = null;
 		if ($this->session->get('app_api') === true) {
-			$appId = $this->request->getHeader('EX-APP-ID');
+			$appId = $this->request->getHeader('ex-app-id');
 		}
 		try {
 			$authMethod = AuthMethod::from($authMethod ?? AuthMethod::None->value);
@@ -228,7 +243,9 @@ class WebhooksController extends OCSController {
 				$headers,
 				$authMethod,
 				$authData,
+				$tokenNeeded,
 			);
+			$this->dispatchWebhookAuditEvent('updated', $webhookListener);
 			return new DataResponse($webhookListener->jsonSerialize());
 		} catch (\UnexpectedValueException $e) {
 			throw new OCSBadRequestException($e->getMessage(), $e);
@@ -259,6 +276,14 @@ class WebhooksController extends OCSController {
 	public function destroy(int $id): DataResponse {
 		try {
 			$deleted = $this->mapper->deleteById($id);
+			if ($deleted) {
+				$this->eventDispatcher->dispatchTyped(new CriticalActionPerformedEvent(
+					'Webhook "%s" was deleted',
+					['webhookId' => $id],
+					false,
+					'webhook_listeners.webhook.deleted',
+				));
+			}
 			return new DataResponse($deleted);
 		} catch (\UnexpectedValueException $e) {
 			throw new OCSBadRequestException($e->getMessage(), $e);
@@ -273,7 +298,7 @@ class WebhooksController extends OCSController {
 	/**
 	 * Remove all existing webhook registration mapped to an AppAPI app id
 	 *
-	 * @param string $appid id of the app, as in the EX-APP-ID for creation
+	 * @param string $appid id of the app, as in the ex-app-id for creation
 	 *
 	 * @return DataResponse<Http::STATUS_OK, int, array{}>
 	 *
@@ -289,6 +314,14 @@ class WebhooksController extends OCSController {
 	public function deleteByAppId(string $appid): DataResponse {
 		try {
 			$deletedCount = $this->mapper->deleteByAppId($appid);
+			if ($deletedCount > 0) {
+				$this->eventDispatcher->dispatchTyped(new CriticalActionPerformedEvent(
+					'Webhooks of app "%s" were deleted, %s removed',
+					['appId' => $appid, 'count' => $deletedCount],
+					false,
+					'webhook_listeners.webhook.deleted_by_app',
+				));
+			}
 			return new DataResponse($deletedCount);
 		} catch (\UnexpectedValueException $e) {
 			throw new OCSBadRequestException($e->getMessage(), $e);
@@ -298,5 +331,34 @@ class WebhooksController extends OCSController {
 			$this->logger->error('Error when deleting flows for app id ' . $appid, ['exception' => $e]);
 			throw new OCSException('An internal error occurred', Http::STATUS_INTERNAL_SERVER_ERROR, $e);
 		}
+	}
+
+	/**
+	 * Only the origin of the target URI is logged, as webhook URIs may carry secrets in their path or query
+	 *
+	 * @param 'created'|'updated' $action
+	 */
+	private function dispatchWebhookAuditEvent(string $action, WebhookListener $webhookListener): void {
+		$uri = parse_url($webhookListener->getUri()) ?: [];
+		$uriOrigin = ($uri['scheme'] ?? '') . '://' . ($uri['host'] ?? '') . (isset($uri['port']) ? ':' . $uri['port'] : '');
+
+		$message = 'Webhook "%s" for event "%s" calling %s %s was ' . $action;
+		$params = [
+			'webhookId' => $webhookListener->getId(),
+			'event' => $webhookListener->getEvent(),
+			'httpMethod' => $webhookListener->getHttpMethod(),
+			'uriOrigin' => $uriOrigin,
+		];
+		if ($webhookListener->getAppId() !== null) {
+			$message .= ' for app "%s"';
+			$params['appId'] = $webhookListener->getAppId();
+		}
+
+		$this->eventDispatcher->dispatchTyped(new CriticalActionPerformedEvent(
+			$message,
+			$params,
+			false,
+			'webhook_listeners.webhook.' . $action,
+		));
 	}
 }

@@ -1,21 +1,26 @@
 <?php
 
+declare(strict_types=1);
+
 /**
  * SPDX-FileCopyrightText: 2016-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCP\AppFramework\Http;
 
 use OCP\AppFramework\Http;
+use OCP\Server;
+use OCP\Template\ITemplateManager;
 
 /**
  * Response for a normal template
  * @since 6.0.0
  *
- * @template S of int
- * @template H of array<string, mixed>
- * @template-extends Response<int, array<string, mixed>>
+ * @template-covariant S of Http::STATUS_*
+ * @template-covariant H of array<string, mixed>
+ * @template-extends Response<Http::STATUS_*, array<string, mixed>>
  */
 class TemplateResponse extends Response {
 	/**
@@ -68,12 +73,12 @@ class TemplateResponse extends Response {
 	protected $appName;
 
 	/**
-	 * constructor of TemplateResponse
 	 * @param string $appName the name of the app to load the template from
 	 * @param string $templateName the name of the template
 	 * @param array $params an array of parameters which should be passed to the
 	 *                      template
 	 * @param string $renderAs how the page should be rendered, defaults to user
+	 * @psalm-param TemplateResponse::RENDER_AS_* $renderAs
 	 * @param S $status
 	 * @param H $headers
 	 * @since 6.0.0 - parameters $params and $renderAs were added in 7.0.0
@@ -90,7 +95,6 @@ class TemplateResponse extends Response {
 		$this->setFeaturePolicy(new FeaturePolicy());
 	}
 
-
 	/**
 	 * Sets template parameters
 	 * @param array $params an array with key => value structure which sets template
@@ -104,7 +108,6 @@ class TemplateResponse extends Response {
 		return $this;
 	}
 
-
 	/**
 	 * Used for accessing the set parameters
 	 * @return array the params
@@ -114,7 +117,6 @@ class TemplateResponse extends Response {
 		return $this->params;
 	}
 
-
 	/**
 	 * @return string the app id of the used template
 	 * @since 25.0.0
@@ -122,7 +124,6 @@ class TemplateResponse extends Response {
 	public function getApp(): string {
 		return $this->appName;
 	}
-
 
 	/**
 	 * Used for accessing the name of the set template
@@ -132,7 +133,6 @@ class TemplateResponse extends Response {
 	public function getTemplateName() {
 		return $this->templateName;
 	}
-
 
 	/**
 	 * Sets the template page
@@ -149,7 +149,6 @@ class TemplateResponse extends Response {
 		return $this;
 	}
 
-
 	/**
 	 * Returns the set renderAs
 	 * @return string the renderAs value
@@ -159,12 +158,12 @@ class TemplateResponse extends Response {
 		return $this->renderAs;
 	}
 
-
 	/**
 	 * Returns the rendered html
 	 * @return string the rendered html
 	 * @since 6.0.0
 	 */
+	#[\Override]
 	public function render() {
 		$renderAs = self::RENDER_AS_USER;
 		if ($this->renderAs === 'blank') {
@@ -180,7 +179,7 @@ class TemplateResponse extends Response {
 			$renderAs = $this->renderAs;
 		}
 
-		$template = new \OCP\Template($this->appName, $this->templateName, $renderAs);
+		$template = Server::get(ITemplateManager::class)->getTemplate($this->appName, $this->templateName, $renderAs);
 
 		foreach ($this->params as $key => $value) {
 			$template->assign($key, $value);

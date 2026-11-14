@@ -3,54 +3,79 @@
   - SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <template>
-	<VirtualList ref="table"
+	<VirtualList
+		ref="table"
 		:data-component="userConfig.grid_view ? FileEntryGrid : FileEntry"
-		:data-key="'source'"
+		data-key="source"
 		:data-sources="nodes"
-		:grid-mode="userConfig.grid_view"
-		:extra-props="{
+		:navigating="navigating"
+		:gridMode="userConfig.grid_view"
+		:extraProps="{
+			isMimeAvailable,
 			isMtimeAvailable,
 			isSizeAvailable,
 			nodes,
-			filesListWidth,
 		}"
-		:scroll-to-index="scrollToIndex"
+		:scrollToIndex="scrollToIndex"
 		:caption="caption">
-		<template #filters>
-			<FileListFilters />
-		</template>
-
-		<template v-if="!isNoneSelected" #header-overlay>
-			<span class="files-list__selected">{{ t('files', '{count} selected', { count: selectedNodes.length }) }}</span>
-			<FilesListTableHeaderActions :current-view="currentView"
-				:selected-nodes="selectedNodes" />
-		</template>
+		<!-- eslint-disable-next-line vue/singleline-html-element-content-newline -- no space allowed as otherwise `:empty` css selector does not trigger! -->
+		<template #filters><FileListFilterToSearch /><FileListFilterChips /></template>
 
 		<template #before>
 			<!-- Headers -->
-			<FilesListHeader v-for="header in sortedHeaders"
+			<FilesListHeader
+				v-for="header in headers"
 				:key="header.id"
-				:current-folder="currentFolder"
-				:current-view="currentView"
+				:currentFolder="currentFolder"
+				:currentView="currentView"
 				:header="header" />
 		</template>
 
 		<!-- Thead-->
 		<template #header>
 			<!-- Table header and sort buttons -->
-			<FilesListTableHeader ref="thead"
-				:files-list-width="filesListWidth"
-				:is-mtime-available="isMtimeAvailable"
-				:is-size-available="isSizeAvailable"
+			<FilesListTableHeader
+				ref="thead"
+				:currentView="currentView"
+				:isMimeAvailable="isMimeAvailable"
+				:isMtimeAvailable="isMtimeAvailable"
+				:isSizeAvailable="isSizeAvailable"
 				:nodes="nodes" />
+		</template>
+
+		<!-- Body replacement if no files are available -->
+		<template #empty>
+			<slot name="empty" />
+		</template>
+
+		<!-- Loading skeleton while navigating -->
+		<template #navigating>
+			<div class="files-list__loading-skeleton">
+				<!-- Skeleton rows -->
+				<div
+					v-for="index in 5"
+					:key="`skeleton-${index}`"
+					class="files-list__skeleton-row">
+					<!-- Checkbox skeleton -->
+					<div class="files-list__skeleton-checkbox" />
+					<!-- Icon skeleton -->
+					<div class="files-list__skeleton-icon" />
+					<!-- Name skeleton -->
+					<div class="files-list__skeleton-name" />
+					<!-- Other columns skeleton -->
+					<div class="files-list__skeleton-column" />
+					<div class="files-list__skeleton-column" />
+				</div>
+			</div>
 		</template>
 
 		<!-- Tfoot-->
 		<template #footer>
-			<FilesListTableFooter :current-view="currentView"
-				:files-list-width="filesListWidth"
-				:is-mtime-available="isMtimeAvailable"
-				:is-size-available="isSizeAvailable"
+			<FilesListTableFooter
+				:currentView="currentView"
+				:isMimeAvailable="isMimeAvailable"
+				:isMtimeAvailable="isMtimeAvailable"
+				:isSizeAvailable="isSizeAvailable"
 				:nodes="nodes"
 				:summary="summary" />
 		</template>
@@ -58,75 +83,125 @@
 </template>
 
 <script lang="ts">
-import type { Node as NcNode } from '@nextcloud/files'
+import type { INode } from '@nextcloud/files'
 import type { ComponentPublicInstance, PropType } from 'vue'
-import type { UserConfig } from '../types'
+import type { UserConfig } from '../types.ts'
 
-import { getFileListHeaders, Folder, View, getFileActions, FileType } from '@nextcloud/files'
 import { showError } from '@nextcloud/dialogs'
-import { translate as t } from '@nextcloud/l10n'
-import { subscribe, unsubscribe } from '@nextcloud/event-bus'
-import { defineComponent } from 'vue'
-
-import { action as sidebarAction } from '../actions/sidebarAction.ts'
-import { useRouteParameters } from '../composables/useRouteParameters.ts'
-import { getSummaryFor } from '../utils/fileUtils'
-import { useSelectionStore } from '../store/selection.js'
-import { useUserConfigStore } from '../store/userconfig.ts'
-
+import { FileType, Folder, getSidebar, Permission, View } from '@nextcloud/files'
+import { t } from '@nextcloud/l10n'
+import { useHotKey } from '@nextcloud/vue/composables/useHotKey'
+import { computed, defineComponent, provide, watch } from 'vue'
 import FileEntry from './FileEntry.vue'
 import FileEntryGrid from './FileEntryGrid.vue'
+import FileListFilterChips from './FileListFilter/FileListFilterChips.vue'
+import FileListFilterToSearch from './FileListFilter/FileListFilterToSearch.vue'
 import FilesListHeader from './FilesListHeader.vue'
 import FilesListTableFooter from './FilesListTableFooter.vue'
 import FilesListTableHeader from './FilesListTableHeader.vue'
-import filesListWidthMixin from '../mixins/filesListWidth.ts'
 import VirtualList from './VirtualList.vue'
-import logger from '../logger.ts'
-import FilesListTableHeaderActions from './FilesListTableHeaderActions.vue'
-import FileListFilters from './FileListFilters.vue'
+import { useEnabledFileActions } from '../composables/useFileActions.ts'
+import { useFileListHeaders } from '../composables/useFileListHeaders.ts'
+import { FileListLayoutKey, getFileListLayout, resetInlineActionsWidth, useInlineActionsWidth } from '../composables/useFileListLayout.ts'
+import { useFileListWidth } from '../composables/useFileListWidth.ts'
+import { useRouteParameters } from '../composables/useRouteParameters.ts'
+import { useActiveStore } from '../store/active.ts'
+import { useUserConfigStore } from '../store/userconfig.ts'
+import { logger } from '../utils/logger.ts'
 
 export default defineComponent({
 	name: 'FilesListVirtual',
 
 	components: {
-		FileListFilters,
+		FileListFilterChips,
+		FileListFilterToSearch,
 		FilesListHeader,
 		FilesListTableFooter,
 		FilesListTableHeader,
 		VirtualList,
-		FilesListTableHeaderActions,
 	},
-
-	mixins: [
-		filesListWidthMixin,
-	],
 
 	props: {
 		currentView: {
 			type: View,
 			required: true,
 		},
+
 		currentFolder: {
 			type: Folder,
 			required: true,
 		},
+
 		nodes: {
-			type: Array as PropType<NcNode[]>,
+			type: Array as PropType<INode[]>,
 			required: true,
+		},
+
+		summary: {
+			type: String,
+			required: true,
+		},
+
+		navigating: {
+			type: Boolean,
+			default: false,
 		},
 	},
 
-	setup() {
+	setup(props) {
+		const sidebar = getSidebar()
+		const activeStore = useActiveStore()
 		const userConfigStore = useUserConfigStore()
-		const selectionStore = useSelectionStore()
-		const { fileId, openFile } = useRouteParameters()
+
+		const { width, isNarrow, isWide } = useFileListWidth()
+		const { fileId, openDetails, openFile } = useRouteParameters()
+
+		const isMtimeAvailable = computed(() => {
+			// Hide mtime column on narrow screens
+			if (isNarrow.value) {
+				return false // hide on narrow screens
+			}
+			return props.nodes.some((node: INode) => node.mtime !== undefined)
+		})
+
+		const isSizeAvailable = computed(() => {
+			// Hide size column on narrow screens
+			if (isNarrow.value) {
+				return false // hide on narrow screens
+			}
+			return props.nodes.some((node: INode) => node.size !== undefined)
+		})
+
+		const inlineActionsWidth = useInlineActionsWidth()
+		watch(() => [props.currentFolder, props.currentView], resetInlineActionsWidth, { immediate: true })
+
+		const layout = computed(() => getFileListLayout(width.value, {
+			inlineActions: true,
+			mime: userConfigStore.userConfig.show_mime_column
+				&& isWide.value // only show on wide screens
+				&& props.nodes.some((node: INode) => node.mime !== undefined || node.mime !== 'application/octet-stream'),
+			size: isSizeAvailable.value,
+			mtime: isMtimeAvailable.value,
+			columns: isNarrow.value ? [] : (props.currentView.columns ?? []),
+		}, inlineActionsWidth.value))
+		provide(FileListLayoutKey, layout)
+
+		const isMimeAvailable = computed(() => layout.value.mime)
 
 		return {
 			fileId,
+			headers: useFileListHeaders(),
+			isSizeAvailable,
+			isMtimeAvailable,
+			isMimeAvailable,
+			openDetails,
 			openFile,
 
+			sidebar,
+			activeStore,
 			userConfigStore,
-			selectionStore,
+
+			t,
 		}
 	},
 
@@ -134,9 +209,7 @@ export default defineComponent({
 		return {
 			FileEntry,
 			FileEntryGrid,
-			headers: getFileListHeaders(),
 			scrollToIndex: 0,
-			openFileId: null as number|null,
 		}
 	},
 
@@ -145,160 +218,191 @@ export default defineComponent({
 			return this.userConfigStore.userConfig
 		},
 
-		summary() {
-			return getSummaryFor(this.nodes)
+		cantUpload() {
+			return this.currentFolder && (this.currentFolder.permissions & Permission.CREATE) === 0
 		},
 
-		isMtimeAvailable() {
-			// Hide mtime column on narrow screens
-			if (this.filesListWidth < 768) {
-				return false
-			}
-			return this.nodes.some(node => node.mtime !== undefined)
-		},
-		isSizeAvailable() {
-			// Hide size column on narrow screens
-			if (this.filesListWidth < 768) {
-				return false
-			}
-			return this.nodes.some(node => node.size !== undefined)
-		},
-
-		sortedHeaders() {
-			if (!this.currentFolder || !this.currentView) {
-				return []
-			}
-
-			return [...this.headers].sort((a, b) => a.order - b.order)
+		isQuotaExceeded() {
+			return this.currentFolder?.attributes?.['quota-available-bytes'] === 0
 		},
 
 		caption() {
 			const defaultCaption = t('files', 'List of files and folders.')
 			const viewCaption = this.currentView.caption || defaultCaption
+			const cantUploadCaption = this.cantUpload ? t('files', 'You do not have permission to upload or create files here.') : null
+			const quotaExceededCaption = this.isQuotaExceeded ? t('files', 'You have used your space quota and cannot upload files anymore.') : null
 			const sortableCaption = t('files', 'Column headers with buttons are sortable.')
 			const virtualListNote = t('files', 'This list is not fully rendered for performance reasons. The files will be rendered as you navigate through the list.')
-			return `${viewCaption}\n${sortableCaption}\n${virtualListNote}`
+			return [
+				viewCaption,
+				cantUploadCaption,
+				quotaExceededCaption,
+				sortableCaption,
+				virtualListNote,
+			].filter(Boolean).join('\n')
 		},
 
-		selectedNodes() {
-			return this.selectionStore.selected
-		},
-
-		isNoneSelected() {
-			return this.selectedNodes.length === 0
+		isEmpty() {
+			return this.nodes.length === 0
 		},
 	},
 
 	watch: {
-		fileId: {
-			handler(fileId) {
-				this.scrollToFile(fileId, false)
-			},
-			immediate: true,
+		// If nodes gets populated and we have a fileId,
+		// an openFile or openDetails, we fire the appropriate actions.
+		isEmpty() {
+			this.handleOpenQueries()
 		},
 
-		openFile: {
-			handler() {
-				// wait for scrolling and updating the actions to settle
-				this.$nextTick(() => {
-					if (this.fileId) {
-						if (this.openFile) {
-							this.handleOpenFile(this.fileId)
-						} else {
-							this.unselectFile()
-						}
-					}
-				})
-			},
-			immediate: true,
+		fileId() {
+			this.handleOpenQueries()
 		},
+
+		openFile() {
+			this.handleOpenQueries()
+		},
+
+		openDetails() {
+			this.handleOpenQueries()
+		},
+	},
+
+	created() {
+		useHotKey('Escape', this.unselectFile, {
+			stop: true,
+			prevent: true,
+		})
+
+		useHotKey(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'], this.onKeyDown, {
+			stop: true,
+			prevent: true,
+		})
 	},
 
 	mounted() {
 		// Add events on parent to cover both the table and DragAndDrop notice
 		const mainContent = window.document.querySelector('main.app-content') as HTMLElement
 		mainContent.addEventListener('dragover', this.onDragOver)
-
-		subscribe('files:sidebar:closed', this.unselectFile)
-
-		// If the file list is mounted with a fileId specified
-		// then we need to open the sidebar initially
-		if (this.fileId) {
-			this.openSidebarForFile(this.fileId)
-		}
 	},
 
-	beforeDestroy() {
+	beforeUnmount() {
 		const mainContent = window.document.querySelector('main.app-content') as HTMLElement
 		mainContent.removeEventListener('dragover', this.onDragOver)
-
-		unsubscribe('files:sidebar:closed', this.unselectFile)
 	},
 
 	methods: {
-		// Open the file sidebar if we have the room for it
-		// but don't open the sidebar for the current folder
+		handleOpenQueries() {
+			// If the list is empty, or we don't have a fileId,
+			// there's nothing to be done.
+			if (this.isEmpty || this.fileId === null) {
+				return
+			}
+
+			logger.debug('FilesListVirtual: checking for requested fileId, openFile or openDetails', {
+				nodes: this.nodes,
+				fileId: this.fileId,
+				openFile: this.openFile,
+				openDetails: this.openDetails,
+			})
+
+			if (this.openFile) {
+				this.handleOpenFile(this.fileId)
+			}
+
+			if (this.openDetails) {
+				this.openSidebarForFile(this.fileId)
+			}
+
+			if (this.fileId) {
+				const node = this.nodes.find((node) => node.fileid === this.fileId)
+				if (node) {
+					this.activeStore.activeNode = node
+					this.scrollToFile(this.fileId, false)
+				}
+			}
+		},
+
 		openSidebarForFile(fileId) {
-			if (document.documentElement.clientWidth > 1024 && this.currentFolder.fileid !== fileId) {
-				// Open the sidebar for the given URL fileid
-				// iif we just loaded the app.
-				const node = this.nodes.find(n => n.fileid === fileId) as NcNode
-				if (node && sidebarAction?.enabled?.([node], this.currentView)) {
-					logger.debug('Opening sidebar on file ' + node.path, { node })
-					sidebarAction.exec(node, this.currentView, this.currentFolder.path)
-				}
+			// Open the sidebar for the given URL fileid
+			// iif we just loaded the app.
+			const node = this.nodes.find((n) => n.fileid === fileId) as INode
+			if (node && this.sidebar.available) {
+				logger.debug('Opening sidebar on file ' + node.path, { node })
+				this.sidebar.open(node)
+			} else {
+				logger.warn(`Failed to open sidebar on file ${fileId}, file isn't cached yet !`, { fileId, node })
 			}
 		},
 
-		scrollToFile(fileId: number|null, warn = true) {
+		scrollToFile(fileId: number | null, warn = true) {
 			if (fileId) {
-				const index = this.nodes.findIndex(node => node.fileid === fileId)
-				if (warn && index === -1 && fileId !== this.currentFolder.fileid) {
-					showError(this.t('files', 'File not found'))
+				// Do not uselessly scroll to the top of the list.
+				if (fileId === this.currentFolder.fileid) {
+					return
 				}
-				this.scrollToIndex = Math.max(0, index)
-			}
-		},
 
-		unselectFile() {
-			// If the Sidebar is closed and if openFile is false, remove the file id from the URL
-			if (!this.openFile && OCA.Files.Sidebar.file === '') {
-				window.OCP.Files.Router.goToRoute(
-					null,
-					{ ...this.$route.params, fileid: String(this.currentFolder.fileid ?? '') },
-					this.$route.query,
-				)
+				const index = this.nodes.findIndex((node) => node.fileid === fileId)
+				if (warn && index === -1 && fileId !== this.currentFolder.fileid) {
+					showError(t('files', 'File not found'))
+				}
+
+				this.scrollToIndex = Math.max(0, index)
+				logger.debug('Scrolling to file ' + fileId, { fileId, index })
 			}
 		},
 
 		/**
+		 * Unselect the current file and clear open parameters from the URL
+		 */
+		unselectFile() {
+			const query = { ...this.$route.query }
+			delete query.openfile
+			delete query.opendetails
+
+			this.activeStore.activeNode = this.currentFolder
+		},
+
+		/**
 		 * Handle opening a file (e.g. by ?openfile=true)
+		 *
 		 * @param fileId File to open
 		 */
-		handleOpenFile(fileId: number|null) {
-			if (fileId === null || this.openFileId === fileId) {
+		async handleOpenFile(fileId: number) {
+			const node = this.nodes.find((n) => n.fileid === fileId) as INode
+			if (node === undefined) {
 				return
 			}
 
-			const node = this.nodes.find(n => n.fileid === fileId) as NcNode
-			if (node === undefined || node.type === FileType.Folder) {
-				return
-			}
+			if (node.type === FileType.File) {
+				const actions = useEnabledFileActions({
+					nodes: [node],
+					view: this.currentView,
+					folder: this.currentFolder,
+					contents: this.nodes,
+				})
+				const defaultAction = actions.value.find((action) => action.id !== 'download' && !!action.default)
 
-			logger.debug('Opening file ' + node.path, { node })
-			this.openFileId = fileId
-			const defaultAction = getFileActions()
-				// Get only default actions (visible and hidden)
-				.filter(action => !!action?.default)
-				// Find actions that are either always enabled or enabled for the current node
-				.filter((action) => !action.enabled || action.enabled([node], this.currentView))
-				// Sort enabled default actions by order
-				.sort((a, b) => (a.order || 0) - (b.order || 0))
-				// Get the first one
-				.at(0)
-			// Some file types do not have a default action (e.g. they can only be downloaded)
-			// So if there is an enabled default action, so execute it
-			defaultAction?.exec(node, this.currentView, this.currentFolder.path)
+				// Some file types do not have a default action (e.g. they can only be downloaded)
+				// So if there is an enabled default action, so execute it
+				if (defaultAction) {
+					logger.debug('Opening file ' + node.path, { node })
+					return await defaultAction.exec({
+						nodes: [node],
+						view: this.currentView,
+						folder: this.currentFolder,
+						contents: this.nodes,
+					})
+				}
+			}
+			// The file is either a folder or has no default action other than downloading
+			// in this case we need to open the details instead and remove the route from the history
+			logger.debug('Ignore `openfile` query and replacing with `opendetails` for ' + node.path, { node })
+			window.OCP.Files.Router.goToRoute(
+				null,
+				window.OCP.Files.Router.params,
+				{ ...this.$route.query, openfile: undefined, opendetails: '' },
+				true, // silent update of the URL
+			)
 		},
 
 		onDragOver(event: DragEvent) {
@@ -329,29 +433,97 @@ export default defineComponent({
 			}
 		},
 
-		t,
+		onKeyDown(event: KeyboardEvent) {
+			if (this.isEmpty) {
+				return
+			}
+
+			if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown'
+				&& (!this.userConfig.grid_view || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight'))) {
+				// not an arrow key we handle
+				return
+			}
+
+			if (!this.fileId || this.fileId === this.currentFolder.fileid) {
+				// no active node so use either first or last node
+				const index = event.key === 'ArrowUp' || event.key === 'ArrowLeft'
+					? this.nodes.length - 1
+					: 0
+				this.setActiveNode(this.nodes[index] as INode & { fileid: number })
+			}
+
+			const index = this.nodes.findIndex((node) => node.fileid === this.fileId) ?? 0
+			// Up and down arrow keys
+			if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+				const columnCount = this.$refs.table?.columnCount ?? 1
+				const nextIndex = event.key === 'ArrowUp' ? index - columnCount : index + columnCount
+				if (nextIndex < 0 || nextIndex >= this.nodes.length) {
+					return
+				}
+
+				const nextNode = this.nodes[nextIndex]
+
+				if (nextNode && nextNode?.fileid) {
+					this.setActiveNode(nextNode)
+					return
+				}
+			}
+
+			// if grid mode, left and right arrow keys
+			if (this.userConfig.grid_view && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+				const nextIndex = event.key === 'ArrowLeft' ? index - 1 : index + 1
+				if (nextIndex < 0 || nextIndex >= this.nodes.length) {
+					return
+				}
+
+				const nextNode = this.nodes[nextIndex]
+
+				if (nextNode && nextNode?.fileid) {
+					this.setActiveNode(nextNode)
+					return
+				}
+			}
+		},
+
+		async setActiveNode(node: INode & { fileid: number }) {
+			logger.debug('Navigating to file ' + node.path, { node, fileid: node.fileid })
+			this.scrollToFile(node.fileid)
+
+			// Remove openfile and opendetails from the URL
+			const query = { ...this.$route.query }
+			delete query.openfile
+			delete query.opendetails
+			await this.$router.replace({
+				...this.$route,
+				query,
+			})
+
+			// set the new file as active
+			this.activeStore.activeNode = node
+		},
 	},
 })
 </script>
 
 <style scoped lang="scss">
 .files-list {
-	--row-height: 55px;
+	--row-height: 44px;
 	--cell-margin: 14px;
 
 	--checkbox-padding: calc((var(--row-height) - var(--checkbox-size)) / 2);
 	--checkbox-size: 24px;
 	--clickable-area: var(--default-clickable-area);
-	--icon-preview-size: 32px;
+	--icon-preview-size: 24px;
 
-	--fixed-block-start-position: var(--default-clickable-area);
-
+	--fixed-block-start-position: calc(var(--clickable-area-small) + var(--default-grid-baseline, 4px));
+	display: flex;
+	flex-direction: column;
 	overflow: auto;
 	height: 100%;
 	will-change: scroll-position;
 
-	&:has(.file-list-filters__active) {
-		--fixed-block-start-position: calc(var(--default-clickable-area) + var(--default-grid-baseline) + var(--clickable-area-small));
+	&:has(&__filters:empty) {
+		--fixed-block-start-position: 0px;
 	}
 
 	& :deep() {
@@ -381,21 +553,22 @@ export default defineComponent({
 			flex-direction: column;
 		}
 
-		.files-list__selected {
-			padding-inline-end: 12px;
-			white-space: nowrap;
-		}
-
 		.files-list__table {
 			display: block;
 
-			&.files-list__table--with-thead-overlay {
-				// Hide the table header below the overlay
-				margin-block-start: calc(-1 * var(--row-height));
+			// Visually hide the table when there are no files
+			&--hidden {
+				visibility: hidden;
+				z-index: -1;
+				opacity: 0;
 			}
 		}
 
 		.files-list__filters {
+			display: flex;
+			gap: var(--default-grid-baseline);
+			box-sizing: border-box;
+
 			// Pinned on top when scrolling above table header
 			position: sticky;
 			top: 0;
@@ -406,24 +579,10 @@ export default defineComponent({
 			padding-inline: var(--row-height) var(--default-grid-baseline, 4px);
 			height: var(--fixed-block-start-position);
 			width: 100%;
-		}
 
-		.files-list__thead-overlay {
-			// Pinned on top when scrolling
-			position: sticky;
-			top: var(--fixed-block-start-position);
-			// Save space for a row checkbox
-			margin-inline-start: var(--row-height);
-			// More than .files-list__thead
-			z-index: 20;
-
-			display: flex;
-			align-items: center;
-
-			// Reuse row styles
-			background-color: var(--color-main-background);
-			border-block-end: 1px solid var(--color-border);
-			height: var(--row-height);
+			&:not(:empty) {
+				padding-block: calc(var(--default-grid-baseline, 4px) / 2);
+			}
 		}
 
 		.files-list__thead,
@@ -432,7 +591,6 @@ export default defineComponent({
 			flex-direction: column;
 			width: 100%;
 			background-color: var(--color-main-background);
-
 		}
 
 		// Table header
@@ -443,12 +601,109 @@ export default defineComponent({
 			top: var(--fixed-block-start-position);
 		}
 
+		// Empty content
+		.files-list__empty {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			width: 100%;
+			height: 100%;
+		}
+
+		// Loading skeleton
+		.files-list__loading-skeleton {
+			display: flex;
+			flex-direction: column;
+			width: 100%;
+		}
+
+		.files-list__skeleton-row {
+			display: flex;
+			align-items: center;
+			width: 100%;
+			height: var(--row-height);
+			border-block-end: 1px solid var(--color-border);
+			box-sizing: border-box;
+			gap: 8px;
+			padding: 0 8px;
+		}
+
+		.files-list__skeleton-checkbox {
+			width: 18px;
+			height: 18px;
+			margin: 6px;
+			border-radius: 4px;
+			background: linear-gradient(
+				90deg,
+				var(--color-placeholder-light),
+				var(--color-placeholder-dark),
+				var(--color-placeholder-light)
+			);
+			background-size: 200% 100%;
+			animation: skeleton-loading 3.5s infinite;
+			flex-shrink: 0;
+		}
+
+		.files-list__skeleton-icon {
+			width: 24px;
+			height: 24px;
+			border-radius: 4px;
+			background: linear-gradient(
+				90deg,
+				var(--color-placeholder-light),
+				var(--color-placeholder-dark),
+				var(--color-placeholder-light)
+			);
+			background-size: 200% 100%;
+			animation: skeleton-loading 3.5s infinite;
+			flex-shrink: 0;
+		}
+
+		.files-list__skeleton-name {
+			flex: 1 1 auto;
+			height: 20px;
+			border-radius: 4px;
+			background: linear-gradient(
+				90deg,
+				var(--color-placeholder-light),
+				var(--color-placeholder-dark),
+				var(--color-placeholder-light)
+			);
+			background-size: 200% 100%;
+			animation: skeleton-loading 3.5s infinite;
+			min-width: 100px;
+		}
+
+		.files-list__skeleton-column {
+			width: calc(var(--clickable-area-large) * 2.3);
+			height: 20px;
+			border-radius: 4px;
+			background: linear-gradient(
+				90deg,
+				var(--color-placeholder-light),
+				var(--color-placeholder-dark),
+				var(--color-placeholder-light)
+			);
+			background-size: 200% 100%;
+			animation: skeleton-loading 1.5s infinite;
+			flex-shrink: 0;
+		}
+
+		@keyframes skeleton-loading {
+			0% {
+				background-position: 200% 0;
+			}
+			100% {
+				background-position: -200% 0;
+			}
+		}
+
 		tr {
 			position: relative;
 			display: flex;
 			align-items: center;
 			width: 100%;
-			user-select: none;
 			border-block-end: 1px solid var(--color-border);
 			box-sizing: border-box;
 			user-select: none;
@@ -510,6 +765,20 @@ export default defineComponent({
 			}
 		}
 
+		// When files are selected, batch actions live in the select-all cell
+		// and other headers are visually hidden (kept in DOM for column association).
+		.files-list__row-head--selected {
+			.files-list__row-checkbox {
+				flex: 1 1 auto;
+				width: auto;
+				min-width: var(--row-height);
+				max-width: 100%;
+				justify-content: flex-start;
+				gap: 12px;
+				overflow: hidden;
+			}
+		}
+
 		.files-list__row {
 			&:hover, &:focus, &:active, &--active, &--dragover {
 				// WCAG AA compliant
@@ -556,7 +825,7 @@ export default defineComponent({
 			& > span {
 				justify-content: flex-start;
 
-				&:not(.files-list__row-icon-favorite) svg {
+				&:not(.files-list__row-icon-favorite):not(.files-list__row-icon-recently-created) svg {
 					width: var(--icon-preview-size);
 					height: var(--icon-preview-size);
 				}
@@ -604,7 +873,8 @@ export default defineComponent({
 				}
 			}
 
-			&-favorite {
+			&-favorite,
+			&-recently-created {
 				position: absolute;
 				top: 0px;
 				inset-inline-end: -10px;
@@ -613,8 +883,8 @@ export default defineComponent({
 			// File and folder overlay
 			&-overlay {
 				position: absolute;
-				max-height: calc(var(--icon-preview-size) * 0.5);
-				max-width: calc(var(--icon-preview-size) * 0.5);
+				max-height: calc(var(--icon-preview-size) * 0.6);
+				max-width: calc(var(--icon-preview-size) * 0.6);
 				color: var(--color-primary-element-text);
 				// better alignment with the folder icon
 				margin-block-start: 2px;
@@ -691,8 +961,8 @@ export default defineComponent({
 
 				&:invalid {
 					// Show red border on invalid input
-					border-color: var(--color-error);
-					color: red;
+					border-color: var(--color-border-error);
+					color: var(--color-text-error);
 				}
 			}
 		}
@@ -719,22 +989,28 @@ export default defineComponent({
 			margin-inline-end: 7px;
 		}
 
+		.files-list__row-mime,
 		.files-list__row-mtime,
 		.files-list__row-size {
 			color: var(--color-text-maxcontrast);
 		}
+
 		.files-list__row-size {
-			width: calc(var(--row-height) * 1.5);
+			width: calc(var(--row-height) * 2);
 			// Right align content/text
 			justify-content: flex-end;
 		}
 
 		.files-list__row-mtime {
-			width: calc(var(--row-height) * 2);
+			width: calc(var(--row-height) * 2.5);
+		}
+
+		.files-list__row-mime {
+			width: calc(var(--row-height) * 3.5);
 		}
 
 		.files-list__row-column-custom {
-			width: calc(var(--row-height) * 2);
+			width: calc(var(--row-height) * 2.5);
 		}
 	}
 }
@@ -750,16 +1026,14 @@ export default defineComponent({
 
 <style lang="scss">
 // Grid mode
-tbody.files-list__tbody.files-list__tbody--grid {
-	--half-clickable-area: calc(var(--clickable-area) / 2);
+.files-list--grid tbody.files-list__tbody {
 	--item-padding: 16px;
 	--icon-preview-size: 166px;
-	--name-height: 32px;
-	--mtime-height: 16px;
+	--name-height: var(--default-clickable-area);
+	--mtime-height: calc(var(--font-size-small) + var(--default-grid-baseline));
 	--row-width: calc(var(--icon-preview-size) + var(--item-padding) * 2);
 	--row-height: calc(var(--icon-preview-size) + var(--name-height) + var(--mtime-height) + var(--item-padding) * 2);
 	--checkbox-padding: 0px;
-
 	display: grid;
 	grid-template-columns: repeat(auto-fill, var(--row-width));
 
@@ -782,8 +1056,8 @@ tbody.files-list__tbody.files-list__tbody--grid {
 	.files-list__row-checkbox {
 		position: absolute;
 		z-index: 9;
-		top: calc(var(--item-padding)/2);
-		inset-inline-start: calc(var(--item-padding)/2);
+		top: calc(var(--item-padding) / 2);
+		inset-inline-start: calc(var(--item-padding) / 2);
 		overflow: hidden;
 		--checkbox-container-size: 44px;
 		width: var(--checkbox-container-size);
@@ -802,8 +1076,9 @@ tbody.files-list__tbody.files-list__tbody--grid {
 		}
 	}
 
-	// Star icon in the top right
-	.files-list__row-icon-favorite {
+	// Icon in the top right
+	.files-list__row-icon-favorite,
+	.files-list__row-icon-recently-created {
 		position: absolute;
 		top: 0;
 		inset-inline-end: 0;
@@ -838,15 +1113,32 @@ tbody.files-list__tbody.files-list__tbody--grid {
 	.files-list__row-mtime {
 		width: var(--icon-preview-size);
 		height: var(--mtime-height);
-		font-size: calc(var(--default-font-size) - 4px);
+		font-size: var(--font-size-small);
 	}
 
 	.files-list__row-actions {
 		position: absolute;
-		inset-inline-end: calc(var(--half-clickable-area) / 2);
+		inset-inline-end: calc(var(--clickable-area) / 4);
 		inset-block-end: calc(var(--mtime-height) / 2);
 		width: var(--clickable-area);
 		height: var(--clickable-area);
+	}
+}
+
+@media screen and (max-width: 768px) {
+	// there is no mtime
+	.files-list--grid tbody.files-list__tbody {
+		--mtime-height: 0px;
+
+		// so we move the action to the name
+		.files-list__row-actions {
+			inset-block-end: var(--item-padding);
+		}
+
+		// and we need to keep space on the name for the actions
+		.files-list__row-name-text {
+			padding-inline-end: var(--clickable-area) !important;
+		}
 	}
 }
 </style>

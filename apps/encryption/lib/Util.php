@@ -5,11 +5,14 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Encryption;
 
 use OC\Files\View;
 use OCA\Encryption\Crypto\Crypt;
-use OCP\IConfig;
+use OCP\Config\IUserConfig;
+use OCP\Files\Storage\IStorage;
+use OCP\IAppConfig;
 use OCP\IUser;
 use OCP\IUserManager;
 use OCP\IUserSession;
@@ -22,7 +25,8 @@ class Util {
 		private View $files,
 		private Crypt $crypt,
 		IUserSession $userSession,
-		private IConfig $config,
+		private IAppConfig $appConfig,
+		private IUserConfig $userConfig,
 		private IUserManager $userManager,
 	) {
 		$this->user = $userSession->isLoggedIn() ? $userSession->getUser() : false;
@@ -35,12 +39,7 @@ class Util {
 	 * @return bool
 	 */
 	public function isRecoveryEnabledForUser($uid) {
-		$recoveryMode = $this->config->getUserValue($uid,
-			'encryption',
-			'recoveryEnabled',
-			'0');
-
-		return ($recoveryMode === '1');
+		return $this->userConfig->getValueBool($uid, 'encryption', 'recoveryEnabled');
 	}
 
 	/**
@@ -49,13 +48,7 @@ class Util {
 	 * @return bool
 	 */
 	public function shouldEncryptHomeStorage() {
-		$encryptHomeStorage = $this->config->getAppValue(
-			'encryption',
-			'encryptHomeStorage',
-			'1'
-		);
-
-		return ($encryptHomeStorage === '1');
+		return $this->appConfig->getValueBool('encryption', 'encryptHomeStorage', true);
 	}
 
 	/**
@@ -63,35 +56,20 @@ class Util {
 	 *
 	 * @param bool $encryptHomeStorage
 	 */
-	public function setEncryptHomeStorage($encryptHomeStorage) {
-		$value = $encryptHomeStorage ? '1' : '0';
-		$this->config->setAppValue(
-			'encryption',
-			'encryptHomeStorage',
-			$value
-		);
+	public function setEncryptHomeStorage(bool $encryptHomeStorage) {
+		$this->appConfig->setValueBool('encryption', 'encryptHomeStorage', $encryptHomeStorage);
 	}
 
 	/**
 	 * check if master key is enabled
 	 */
 	public function isMasterKeyEnabled(): bool {
-		$userMasterKey = $this->config->getAppValue('encryption', 'useMasterKey', '1');
-		return ($userMasterKey === '1');
+		return $this->appConfig->getValueBool('encryption', 'useMasterKey', true);
 	}
 
-	/**
-	 * @param $enabled
-	 * @return bool
-	 */
-	public function setRecoveryForUser($enabled) {
-		$value = $enabled ? '1' : '0';
-
+	public function setRecoveryForUser(bool $enabled): bool {
 		try {
-			$this->config->setUserValue($this->user->getUID(),
-				'encryption',
-				'recoveryEnabled',
-				$value);
+			$this->userConfig->setValueBool($this->user->getUID(), 'encryption', 'recoveryEnabled', $enabled);
 			return true;
 		} catch (PreConditionNotMetException $e) {
 			return false;
@@ -119,21 +97,15 @@ class Util {
 		if (count($parts) > 1) {
 			$owner = $parts[1];
 			if ($this->userManager->userExists($owner) === false) {
-				throw new \BadMethodCallException('Unknown user: ' .
-				'method expects path to a user folder relative to the data folder');
+				throw new \BadMethodCallException('Unknown user: '
+				. 'method expects path to a user folder relative to the data folder');
 			}
 		}
 
 		return $owner;
 	}
 
-	/**
-	 * get storage of path
-	 *
-	 * @param string $path
-	 * @return \OC\Files\Storage\Storage|null
-	 */
-	public function getStorage($path) {
+	public function getStorage(string $path): ?IStorage {
 		return $this->files->getMount($path)->getStorage();
 	}
 

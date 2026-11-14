@@ -8,6 +8,7 @@
 
 namespace OCA\Files\BackgroundJob;
 
+use OC\Files\SetupManager;
 use OC\Files\Utils\Scanner;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\TimedJob;
@@ -15,6 +16,7 @@ use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\EventDispatcher\IEventDispatcher;
 use OCP\IConfig;
 use OCP\IDBConnection;
+use OCP\IUserManager;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -24,44 +26,37 @@ use Psr\Log\LoggerInterface;
  * @package OCA\Files\BackgroundJob
  */
 class ScanFiles extends TimedJob {
-	private IConfig $config;
-	private IEventDispatcher $dispatcher;
-	private LoggerInterface $logger;
-	private IDBConnection $connection;
-
 	/** Amount of users that should get scanned per execution */
 	public const USERS_PER_SESSION = 500;
 
 	public function __construct(
-		IConfig $config,
-		IEventDispatcher $dispatcher,
-		LoggerInterface $logger,
-		IDBConnection $connection,
+		private IConfig $config,
+		private IEventDispatcher $dispatcher,
+		private LoggerInterface $logger,
+		private IDBConnection $connection,
 		ITimeFactory $time,
+		private readonly SetupManager $setupManager,
+		private readonly IUserManager $userManager,
 	) {
 		parent::__construct($time);
 		// Run once per 10 minutes
 		$this->setInterval(60 * 10);
-
-		$this->config = $config;
-		$this->dispatcher = $dispatcher;
-		$this->logger = $logger;
-		$this->connection = $connection;
 	}
 
 	protected function runScanner(string $user): void {
 		try {
 			$scanner = new Scanner(
-				$user,
+				$this->userManager->get($user),
 				null,
 				$this->dispatcher,
-				$this->logger
+				$this->logger,
+				$this->setupManager,
 			);
-			$scanner->backgroundScan('');
+			$scanner->backgroundScan('/' . $user);
 		} catch (\Exception $e) {
 			$this->logger->error($e->getMessage(), ['exception' => $e, 'app' => 'files']);
 		}
-		\OC_Util::tearDownFS();
+		$this->setupManager->tearDown();
 	}
 
 	/**
@@ -79,14 +74,14 @@ class ScanFiles extends TimedJob {
 			$query->select('m.user_id')
 				->from('filecache', 'f')
 				->leftJoin('f', 'mounts', 'm', $query->expr()->eq('m.storage_id', 'f.storage'))
-				->where($query->expr()->lt('f.size', $query->createNamedParameter(0, IQueryBuilder::PARAM_INT)))
+				->where($query->expr()->eq('f.size', $query->createNamedParameter(-1, IQueryBuilder::PARAM_INT)))
 				->andWhere($query->expr()->gt('f.parent', $query->createNamedParameter(-1, IQueryBuilder::PARAM_INT)))
 				->setMaxResults(10)
 				->groupBy('f.storage')
 				->runAcrossAllShards();
 
 			$result = $query->executeQuery();
-			while ($res = $result->fetch()) {
+			while ($res = $result->fetchAssociative()) {
 				if ($res['user_id']) {
 					return $res['user_id'];
 				}
@@ -100,7 +95,7 @@ class ScanFiles extends TimedJob {
 			$query->select('m.user_id')
 				->from('filecache', 'f')
 				->leftJoin('f', 'mounts', 'm', $query->expr()->eq('m.storage_id', 'f.storage'))
-				->where($query->expr()->lt('f.size', $query->createNamedParameter(0, IQueryBuilder::PARAM_INT)))
+				->where($query->expr()->eq('f.size', $query->createNamedParameter(-1, IQueryBuilder::PARAM_INT)))
 				->andWhere($query->expr()->gt('f.parent', $query->createNamedParameter(-1, IQueryBuilder::PARAM_INT)))
 				->andWhere($query->expr()->in('f.storage', $query->createNamedParameter($storages, IQueryBuilder::PARAM_INT_ARRAY)))
 				->setMaxResults(1)
@@ -111,7 +106,7 @@ class ScanFiles extends TimedJob {
 			$query->select('m.user_id')
 				->from('filecache', 'f')
 				->innerJoin('f', 'mounts', 'm', $query->expr()->eq('m.storage_id', 'f.storage'))
-				->where($query->expr()->lt('f.size', $query->createNamedParameter(0, IQueryBuilder::PARAM_INT)))
+				->where($query->expr()->eq('f.size', $query->createNamedParameter(-1, IQueryBuilder::PARAM_INT)))
 				->andWhere($query->expr()->gt('f.parent', $query->createNamedParameter(-1, IQueryBuilder::PARAM_INT)))
 				->setMaxResults(1)
 				->runAcrossAllShards();
@@ -124,14 +119,15 @@ class ScanFiles extends TimedJob {
 		$query = $this->connection->getQueryBuilder();
 		$query->selectDistinct('storage_id')
 			->from('mounts');
-		return $query->executeQuery()->fetchAll(\PDO::FETCH_COLUMN);
+		return $query->executeQuery()->fetchFirstColumn();
 	}
 
 	/**
 	 * @param $argument
 	 * @throws \Exception
 	 */
-	protected function run($argument) {
+	#[\Override]
+	protected function run($argument): void {
 		if ($this->config->getSystemValueBool('files_no_background_scan', false)) {
 			return;
 		}

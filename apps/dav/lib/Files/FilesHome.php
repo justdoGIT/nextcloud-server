@@ -5,6 +5,7 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\Files;
 
 use OC\Files\Filesystem;
@@ -15,32 +16,32 @@ use Sabre\DAV\Exception\Forbidden;
 class FilesHome extends Directory {
 
 	/**
-	 * @var array
-	 */
-	private $principalInfo;
-
-	/**
 	 * FilesHome constructor.
 	 *
 	 * @param array $principalInfo
 	 * @param FileInfo $userFolder
 	 */
-	public function __construct($principalInfo, FileInfo $userFolder) {
-		$this->principalInfo = $principalInfo;
+	public function __construct(
+		private $principalInfo,
+		FileInfo $userFolder,
+	) {
 		$view = Filesystem::getView();
 		parent::__construct($view, $userFolder);
 	}
 
+	#[\Override]
 	public function delete() {
 		throw new Forbidden('Permission denied to delete home folder');
 	}
 
-	public function getName() {
+	#[\Override]
+	public function getName(): string {
 		[,$name] = \Sabre\Uri\split($this->principalInfo['uri']);
 		return $name;
 	}
 
-	public function setName($name) {
+	#[\Override]
+	public function setName($name): void {
 		throw new Forbidden('Permission denied to rename this folder');
 	}
 }

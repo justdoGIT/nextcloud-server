@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2021 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\CardDAV\Activity\Provider;
 
 use OCP\Activity\Exceptions\UnknownActivityException;
@@ -24,30 +25,16 @@ class Card extends Base {
 	public const SUBJECT_UPDATE = 'card_update';
 	public const SUBJECT_DELETE = 'card_delete';
 
-	/** @var IFactory */
-	protected $languageFactory;
-
-	/** @var IManager */
-	protected $activityManager;
-
-	/** @var IEventMerger */
-	protected $eventMerger;
-
-	/** @var IAppManager */
-	protected $appManager;
-
-	public function __construct(IFactory $languageFactory,
+	public function __construct(
+		protected IFactory $languageFactory,
 		IURLGenerator $url,
-		IManager $activityManager,
+		protected IManager $activityManager,
 		IUserManager $userManager,
 		IGroupManager $groupManager,
-		IEventMerger $eventMerger,
-		IAppManager $appManager) {
+		protected IEventMerger $eventMerger,
+		protected IAppManager $appManager,
+	) {
 		parent::__construct($userManager, $groupManager, $url);
-		$this->languageFactory = $languageFactory;
-		$this->activityManager = $activityManager;
-		$this->eventMerger = $eventMerger;
-		$this->appManager = $appManager;
 	}
 
 	/**
@@ -57,6 +44,7 @@ class Card extends Base {
 	 * @return IEvent
 	 * @throws UnknownActivityException
 	 */
+	#[\Override]
 	public function parse($language, IEvent $event, ?IEvent $previousEvent = null): IEvent {
 		if ($event->getApp() !== 'dav' || $event->getType() !== 'contacts') {
 			throw new UnknownActivityException();

@@ -1,9 +1,11 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2017 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Files_Versions\BackgroundJob;
 
 use OC\Files\View;
@@ -18,20 +20,18 @@ use OCP\IUserManager;
 class ExpireVersions extends TimedJob {
 	public const ITEMS_PER_SESSION = 1000;
 
-	private IConfig $config;
-	private Expiration $expiration;
-	private IUserManager $userManager;
-
-	public function __construct(IConfig $config, IUserManager $userManager, Expiration $expiration, ITimeFactory $time) {
+	public function __construct(
+		private IConfig $config,
+		private IUserManager $userManager,
+		private Expiration $expiration,
+		ITimeFactory $time,
+	) {
 		parent::__construct($time);
 		// Run once per 30 minutes
 		$this->setInterval(60 * 30);
-
-		$this->config = $config;
-		$this->expiration = $expiration;
-		$this->userManager = $userManager;
 	}
 
+	#[\Override]
 	public function run($argument) {
 		$backgroundJob = $this->config->getAppValue('files_versions', 'background_job_expire_versions', 'yes');
 		if ($backgroundJob === 'no') {

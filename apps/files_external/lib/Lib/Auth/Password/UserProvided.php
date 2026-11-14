@@ -1,9 +1,11 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2018-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2015 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Files_External\Lib\Auth\Password;
 
 use OCA\Files_External\Lib\Auth\AuthMechanism;
@@ -22,12 +24,10 @@ use OCP\Security\ICredentialsManager;
 class UserProvided extends AuthMechanism implements IUserProvided {
 	public const CREDENTIALS_IDENTIFIER_PREFIX = 'password::userprovided/';
 
-	/** @var ICredentialsManager */
-	protected $credentialsManager;
-
-	public function __construct(IL10N $l, ICredentialsManager $credentialsManager) {
-		$this->credentialsManager = $credentialsManager;
-
+	public function __construct(
+		IL10N $l,
+		protected ICredentialsManager $credentialsManager,
+	) {
 		$this
 			->setIdentifier('password::userprovided')
 			->setVisibility(BackendService::VISIBILITY_ADMIN)
@@ -46,6 +46,7 @@ class UserProvided extends AuthMechanism implements IUserProvided {
 		return self::CREDENTIALS_IDENTIFIER_PREFIX . $storageId;
 	}
 
+	#[\Override]
 	public function saveBackendOptions(IUser $user, $mountId, array $options) {
 		if ($options['password'] === DefinitionParameter::UNMODIFIED_PLACEHOLDER) {
 			$oldCredentials = $this->credentialsManager->retrieve($user->getUID(), $this->getCredentialsIdentifier($mountId));
@@ -61,6 +62,7 @@ class UserProvided extends AuthMechanism implements IUserProvided {
 	/**
 	 * @return void
 	 */
+	#[\Override]
 	public function manipulateStorageConfig(StorageConfig &$storage, ?IUser $user = null) {
 		if (!isset($user)) {
 			throw new InsufficientDataForMeaningfulAnswerException('No credentials saved');

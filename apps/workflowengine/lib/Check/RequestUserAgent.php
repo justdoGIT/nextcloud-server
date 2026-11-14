@@ -1,8 +1,10 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\WorkflowEngine\Check;
 
 use OCP\IL10N;
@@ -10,16 +12,15 @@ use OCP\IRequest;
 
 class RequestUserAgent extends AbstractStringCheck {
 
-	/** @var IRequest */
-	protected $request;
-
 	/**
 	 * @param IL10N $l
 	 * @param IRequest $request
 	 */
-	public function __construct(IL10N $l, IRequest $request) {
+	public function __construct(
+		IL10N $l,
+		protected IRequest $request,
+	) {
 		parent::__construct($l);
-		$this->request = $request;
 	}
 
 	/**
@@ -27,6 +28,7 @@ class RequestUserAgent extends AbstractStringCheck {
 	 * @param string $value
 	 * @return bool
 	 */
+	#[\Override]
 	public function executeCheck($operator, $value) {
 		$actualValue = $this->getActualValue();
 		if (in_array($operator, ['is', '!is'], true)) {
@@ -59,10 +61,12 @@ class RequestUserAgent extends AbstractStringCheck {
 	/**
 	 * @return string
 	 */
+	#[\Override]
 	protected function getActualValue() {
 		return $this->request->getHeader('User-Agent');
 	}
 
+	#[\Override]
 	public function isAvailableForScope(int $scope): bool {
 		return true;
 	}

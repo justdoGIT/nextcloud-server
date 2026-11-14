@@ -5,6 +5,7 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Federation\DAV;
 
 use OCA\Federation\DbHandler;
@@ -15,16 +16,14 @@ use Sabre\HTTP\ResponseInterface;
 
 class FedAuth extends AbstractBasic {
 
-	/** @var DbHandler */
-	private $db;
-
 	/**
 	 * FedAuth constructor.
 	 *
 	 * @param DbHandler $db
 	 */
-	public function __construct(DbHandler $db) {
-		$this->db = $db;
+	public function __construct(
+		private DbHandler $db,
+	) {
 		$this->principalPrefix = 'principals/system/';
 
 		// setup realm
@@ -42,6 +41,7 @@ class FedAuth extends AbstractBasic {
 	 * @param string $password
 	 * @return bool
 	 */
+	#[\Override]
 	protected function validateUserPass($username, $password) {
 		return $this->db->auth($username, $password);
 	}
@@ -49,6 +49,7 @@ class FedAuth extends AbstractBasic {
 	/**
 	 * @inheritdoc
 	 */
+	#[\Override]
 	public function challenge(RequestInterface $request, ResponseInterface $response) {
 	}
 }

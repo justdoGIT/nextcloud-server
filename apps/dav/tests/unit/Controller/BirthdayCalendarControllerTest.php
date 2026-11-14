@@ -1,43 +1,37 @@
 <?php
+
+declare(strict_types=1);
 /**
  * SPDX-FileCopyrightText: 2017 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-namespace OCA\DAV\Tests\Unit\DAV\Controller;
+
+namespace OCA\DAV\Tests\unit\DAV\Controller;
 
 use OCA\DAV\BackgroundJob\GenerateBirthdayCalendarBackgroundJob;
 use OCA\DAV\CalDAV\CalDavBackend;
 use OCA\DAV\Controller\BirthdayCalendarController;
+use OCP\AppFramework\Http\JSONResponse;
 use OCP\BackgroundJob\IJobList;
+use OCP\EventDispatcher\IEventDispatcher;
 use OCP\IConfig;
 use OCP\IDBConnection;
 use OCP\IRequest;
 use OCP\IUser;
 use OCP\IUserManager;
+use OCP\Log\Audit\CriticalActionPerformedEvent;
+use PHPUnit\Framework\MockObject\MockObject;
 use Test\TestCase;
 
 class BirthdayCalendarControllerTest extends TestCase {
-
-	/** @var IConfig|\PHPUnit\Framework\MockObject\MockObject */
-	private $config;
-
-	/** @var IRequest|\PHPUnit\Framework\MockObject\MockObject */
-	private $request;
-
-	/** @var IDBConnection|\PHPUnit\Framework\MockObject\MockObject */
-	private $db;
-
-	/** @var IJobList|\PHPUnit\Framework\MockObject\MockObject */
-	private $jobList;
-
-	/** @var IUserManager|\PHPUnit\Framework\MockObject\MockObject */
-	private $userManager;
-
-	/** @var CalDavBackend|\PHPUnit\Framework\MockObject\MockObject */
-	private $caldav;
-
-	/** @var BirthdayCalendarController|\PHPUnit\Framework\MockObject\MockObject */
-	private $controller;
+	private IConfig&MockObject $config;
+	private IRequest&MockObject $request;
+	private IDBConnection&MockObject $db;
+	private IJobList&MockObject $jobList;
+	private IUserManager&MockObject $userManager;
+	private CalDavBackend&MockObject $caldav;
+	private IEventDispatcher&MockObject $eventDispatcher;
+	private BirthdayCalendarController $controller;
 
 	protected function setUp(): void {
 		parent::setUp();
@@ -48,10 +42,11 @@ class BirthdayCalendarControllerTest extends TestCase {
 		$this->jobList = $this->createMock(IJobList::class);
 		$this->userManager = $this->createMock(IUserManager::class);
 		$this->caldav = $this->createMock(CalDavBackend::class);
+		$this->eventDispatcher = $this->createMock(IEventDispatcher::class);
 
 		$this->controller = new BirthdayCalendarController('dav',
 			$this->request, $this->db, $this->config, $this->jobList,
-			$this->userManager, $this->caldav);
+			$this->userManager, $this->caldav, $this->eventDispatcher);
 	}
 
 	public function testEnable(): void {
@@ -74,16 +69,22 @@ class BirthdayCalendarControllerTest extends TestCase {
 				$closure($user3);
 			});
 
+		$calls = [
+			[GenerateBirthdayCalendarBackgroundJob::class, ['userId' => 'uid1']],
+			[GenerateBirthdayCalendarBackgroundJob::class, ['userId' => 'uid2']],
+			[GenerateBirthdayCalendarBackgroundJob::class, ['userId' => 'uid3']],
+		];
 		$this->jobList->expects($this->exactly(3))
 			->method('add')
-			->withConsecutive(
-				[GenerateBirthdayCalendarBackgroundJob::class, ['userId' => 'uid1']],
-				[GenerateBirthdayCalendarBackgroundJob::class, ['userId' => 'uid2']],
-				[GenerateBirthdayCalendarBackgroundJob::class, ['userId' => 'uid3']],
-			);
+			->willReturnCallback(function () use (&$calls): void {
+				$expected = array_shift($calls);
+				$this->assertEquals($expected, func_get_args());
+			});
+
+		$this->expectAuditEvent('dav.birthday_calendar.enabled', 'Birthday calendars were enabled');
 
 		$response = $this->controller->enable();
-		$this->assertInstanceOf('OCP\AppFramework\Http\JSONResponse', $response);
+		$this->assertInstanceOf(JSONResponse::class, $response);
 	}
 
 	public function testDisable(): void {
@@ -96,7 +97,17 @@ class BirthdayCalendarControllerTest extends TestCase {
 		$this->caldav->expects($this->once())
 			->method('deleteAllBirthdayCalendars');
 
+		$this->expectAuditEvent('dav.birthday_calendar.disabled', 'Birthday calendars were disabled');
+
 		$response = $this->controller->disable();
-		$this->assertInstanceOf('OCP\AppFramework\Http\JSONResponse', $response);
+		$this->assertInstanceOf(JSONResponse::class, $response);
+	}
+
+	private function expectAuditEvent(string $operation, string $message): void {
+		$this->eventDispatcher->expects($this->once())
+			->method('dispatchTyped')
+			->with($this->callback(fn (CriticalActionPerformedEvent $event): bool => $event->getOperation() === $operation
+				&& $event->getLogMessage() === $message
+				&& $event->getParameters() === []));
 	}
 }

@@ -5,24 +5,23 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\Connector\Sabre\Exception;
 
 class Forbidden extends \Sabre\DAV\Exception\Forbidden {
 	public const NS_OWNCLOUD = 'http://owncloud.org/ns';
 
 	/**
-	 * @var bool
-	 */
-	private $retry;
-
-	/**
 	 * @param string $message
 	 * @param bool $retry
 	 * @param \Exception $previous
 	 */
-	public function __construct($message, $retry = false, ?\Exception $previous = null) {
+	public function __construct(
+		$message,
+		private $retry = false,
+		?\Exception $previous = null,
+	) {
 		parent::__construct($message, 0, $previous);
-		$this->retry = $retry;
 	}
 
 	/**
@@ -33,6 +32,7 @@ class Forbidden extends \Sabre\DAV\Exception\Forbidden {
 	 * @param \DOMElement $errorNode
 	 * @return void
 	 */
+	#[\Override]
 	public function serialize(\Sabre\DAV\Server $server, \DOMElement $errorNode) {
 
 		// set ownCloud namespace

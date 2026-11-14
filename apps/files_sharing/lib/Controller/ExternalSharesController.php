@@ -1,126 +1,77 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2019-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Files_Sharing\Controller;
 
+use NCU\AppFramework\Http\Attribute\TokenScope;
+use OCA\Files\TokenScopes;
+use OCA\Files_Sharing\External\Manager;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
-use OCP\AppFramework\Http\Attribute\PublicPage;
-use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\Http\JSONResponse;
-use OCP\Http\Client\IClientService;
-use OCP\IConfig;
 use OCP\IRequest;
+use OCP\IUser;
+use OCP\IUserSession;
+use RuntimeException;
 
 /**
  * Class ExternalSharesController
  *
  * @package OCA\Files_Sharing\Controller
  */
+#[TokenScope(scope: TokenScopes::FILES_WRITE)]
 class ExternalSharesController extends Controller {
 	public function __construct(
 		string $appName,
 		IRequest $request,
-		private \OCA\Files_Sharing\External\Manager $externalManager,
-		private IClientService $clientService,
-		private IConfig $config,
+		private readonly Manager $externalManager,
+		private readonly IUserSession $userSession,
 	) {
 		parent::__construct($appName, $request);
 	}
 
-	/**
-	 * @NoOutgoingFederatedSharingRequired
-	 *
-	 * @return JSONResponse
-	 */
-	#[NoAdminRequired]
-	public function index() {
-		return new JSONResponse($this->externalManager->getOpenShares());
+	private function getUser(): IUser {
+		$user = $this->userSession->getUser();
+		if ($user === null) {
+			throw new RuntimeException('No user for non-public page');
+		}
+		return $user;
 	}
 
 	/**
 	 * @NoOutgoingFederatedSharingRequired
-	 *
-	 * @param int $id
-	 * @return JSONResponse
 	 */
 	#[NoAdminRequired]
-	public function create($id) {
-		$this->externalManager->acceptShare($id);
+	public function index(): JSONResponse {
+		return new JSONResponse($this->externalManager->getOpenShares($this->getUser()));
+	}
+
+	/**
+	 * @NoOutgoingFederatedSharingRequired
+	 */
+	#[NoAdminRequired]
+	public function create(string $id): JSONResponse {
+		$externalShare = $this->externalManager->getShare($id, $this->getUser());
+		if ($externalShare !== false) {
+			$this->externalManager->acceptShare($externalShare, $this->getUser());
+		}
 		return new JSONResponse();
 	}
 
 	/**
 	 * @NoOutgoingFederatedSharingRequired
-	 *
-	 * @param integer $id
-	 * @return JSONResponse
 	 */
 	#[NoAdminRequired]
-	public function destroy($id) {
-		$this->externalManager->declineShare($id);
+	public function destroy(string $id): JSONResponse {
+		$externalShare = $this->externalManager->getShare($id, $this->getUser());
+		if ($externalShare !== false) {
+			$this->externalManager->declineShare($externalShare, $this->getUser());
+		}
 		return new JSONResponse();
-	}
-
-	/**
-	 * Test whether the specified remote is accessible
-	 *
-	 * @param string $remote
-	 * @param bool $checkVersion
-	 * @return bool
-	 */
-	protected function testUrl($remote, $checkVersion = false) {
-		try {
-			$client = $this->clientService->newClient();
-			$response = json_decode($client->get(
-				$remote,
-				[
-					'timeout' => 3,
-					'connect_timeout' => 3,
-					'verify' => !$this->config->getSystemValueBool('sharing.federation.allowSelfSignedCertificates', false),
-				]
-			)->getBody());
-
-			if ($checkVersion) {
-				return !empty($response->version) && version_compare($response->version, '7.0.0', '>=');
-			} else {
-				return is_object($response);
-			}
-		} catch (\Exception $e) {
-			return false;
-		}
-	}
-
-	/**
-	 * @NoOutgoingFederatedSharingRequired
-	 * @NoIncomingFederatedSharingRequired
-	 *
-	 * @param string $remote
-	 * @return DataResponse
-	 */
-	#[PublicPage]
-	public function testRemote($remote) {
-		if (str_contains($remote, '#') || str_contains($remote, '?') || str_contains($remote, ';')) {
-			return new DataResponse(false);
-		}
-
-		if (
-			$this->testUrl('https://' . $remote . '/ocm-provider/') ||
-			$this->testUrl('https://' . $remote . '/ocm-provider/index.php') ||
-			$this->testUrl('https://' . $remote . '/status.php', true)
-		) {
-			return new DataResponse('https');
-		} elseif (
-			$this->testUrl('http://' . $remote . '/ocm-provider/') ||
-			$this->testUrl('http://' . $remote . '/ocm-provider/index.php') ||
-			$this->testUrl('http://' . $remote . '/status.php', true)
-		) {
-			return new DataResponse('http');
-		} else {
-			return new DataResponse(false);
-		}
 	}
 }

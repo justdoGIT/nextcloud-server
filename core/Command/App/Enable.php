@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OC\Core\Command\App;
 
 use OC\Installer;
@@ -27,10 +28,12 @@ class Enable extends Command implements CompletionAwareInterface {
 	public function __construct(
 		protected IAppManager $appManager,
 		protected IGroupManager $groupManager,
+		private Installer $installer,
 	) {
 		parent::__construct();
 	}
 
+	#[\Override]
 	protected function configure(): void {
 		$this
 			->setName('app:enable')
@@ -54,6 +57,7 @@ class Enable extends Command implements CompletionAwareInterface {
 			);
 	}
 
+	#[\Override]
 	protected function execute(InputInterface $input, OutputInterface $output): int {
 		$appIds = $input->getArgument('app-id');
 		$groups = $this->resolveGroupIds($input->getOption('groups'));
@@ -77,20 +81,17 @@ class Enable extends Command implements CompletionAwareInterface {
 			return $group->getDisplayName();
 		}, $groupIds);
 
-		if ($this->appManager->isInstalled($appId) && $groupIds === []) {
+		if ($this->appManager->isEnabledForUser($appId) && $groupIds === []) {
 			$output->writeln($appId . ' already enabled');
 			return;
 		}
 
 		try {
-			/** @var Installer $installer */
-			$installer = \OC::$server->query(Installer::class);
-
-			if ($installer->isDownloaded($appId) === false) {
-				$installer->downloadApp($appId);
+			if ($this->installer->isDownloaded($appId) === false) {
+				$this->installer->downloadApp($appId);
 			}
 
-			$installer->installApp($appId, $forceEnable);
+			$this->installer->installApp($appId, $forceEnable);
 			$appVersion = $this->appManager->getAppVersion($appId);
 
 			if ($groupIds === []) {
@@ -129,6 +130,7 @@ class Enable extends Command implements CompletionAwareInterface {
 	 * @param CompletionContext $context
 	 * @return string[]
 	 */
+	#[\Override]
 	public function completeOptionValues($optionName, CompletionContext $context): array {
 		if ($optionName === 'groups') {
 			return array_map(function (IGroup $group) {
@@ -143,10 +145,12 @@ class Enable extends Command implements CompletionAwareInterface {
 	 * @param CompletionContext $context
 	 * @return string[]
 	 */
+	#[\Override]
 	public function completeArgumentValues($argumentName, CompletionContext $context): array {
 		if ($argumentName === 'app-id') {
 			$allApps = $this->appManager->getAllAppsInAppsFolders();
-			return array_diff($allApps, \OC_App::getEnabledApps(true, true));
+			$enabledApps = $this->appManager->getEnabledApps();
+			return array_diff($allApps, $enabledApps);
 		}
 		return [];
 	}

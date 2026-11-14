@@ -1,12 +1,15 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2017 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\CalDAV\BirthdayCalendar;
 
 use OCA\DAV\CalDAV\BirthdayService;
 use OCA\DAV\CalDAV\CalendarHome;
+use OCP\AppFramework\Http;
 use OCP\IConfig;
 use OCP\IUser;
 use Sabre\DAV\Server;
@@ -24,22 +27,9 @@ class EnablePlugin extends ServerPlugin {
 	public const NS_Nextcloud = 'http://nextcloud.com/ns';
 
 	/**
-	 * @var IConfig
-	 */
-	protected $config;
-
-	/**
-	 * @var BirthdayService
-	 */
-	protected $birthdayService;
-
-	/**
 	 * @var Server
 	 */
 	protected $server;
-
-	/** @var IUser */
-	private $user;
 
 	/**
 	 * PublishPlugin constructor.
@@ -48,10 +38,11 @@ class EnablePlugin extends ServerPlugin {
 	 * @param BirthdayService $birthdayService
 	 * @param IUser $user
 	 */
-	public function __construct(IConfig $config, BirthdayService $birthdayService, IUser $user) {
-		$this->config = $config;
-		$this->birthdayService = $birthdayService;
-		$this->user = $user;
+	public function __construct(
+		protected IConfig $config,
+		protected BirthdayService $birthdayService,
+		private IUser $user,
+	) {
 	}
 
 	/**
@@ -62,6 +53,7 @@ class EnablePlugin extends ServerPlugin {
 	 *
 	 * @return string[]
 	 */
+	#[\Override]
 	public function getFeatures() {
 		return ['nc-enable-birthday-calendar'];
 	}
@@ -74,6 +66,7 @@ class EnablePlugin extends ServerPlugin {
 	 *
 	 * @return string
 	 */
+	#[\Override]
 	public function getPluginName() {
 		return 'nc-enable-birthday-calendar';
 	}
@@ -88,6 +81,7 @@ class EnablePlugin extends ServerPlugin {
 	 *
 	 * @param Server $server
 	 */
+	#[\Override]
 	public function initialize(Server $server) {
 		$this->server = $server;
 
@@ -104,7 +98,7 @@ class EnablePlugin extends ServerPlugin {
 	 */
 	public function httpPost(RequestInterface $request, ResponseInterface $response) {
 		$node = $this->server->tree->getNodeForPath($this->server->getRequestUri());
-		if (!($node instanceof CalendarHome)) {
+		if (!$node instanceof CalendarHome) {
 			return;
 		}
 
@@ -116,14 +110,14 @@ class EnablePlugin extends ServerPlugin {
 
 		$owner = substr($node->getOwner(), 17);
 		if ($owner !== $this->user->getUID()) {
-			$this->server->httpResponse->setStatus(403);
+			$this->server->httpResponse->setStatus(Http::STATUS_FORBIDDEN);
 			return false;
 		}
 
 		$this->config->setUserValue($this->user->getUID(), 'dav', 'generateBirthdayCalendar', 'yes');
 		$this->birthdayService->syncUser($this->user->getUID());
 
-		$this->server->httpResponse->setStatus(204);
+		$this->server->httpResponse->setStatus(Http::STATUS_NO_CONTENT);
 
 		return false;
 	}

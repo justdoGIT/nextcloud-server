@@ -10,22 +10,50 @@ declare(strict_types=1);
 namespace OCA\AdminAudit\Listener;
 
 use OCA\AdminAudit\Actions\Action;
+use OCA\AdminAudit\Operation;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
+use OCP\Share\Events\ShareAcceptedEvent;
 use OCP\Share\Events\ShareCreatedEvent;
 use OCP\Share\Events\ShareDeletedEvent;
+use OCP\Share\Events\ShareDeletedFromSelfEvent;
 use OCP\Share\IShare;
 
 /**
- * @template-implements IEventListener<ShareCreatedEvent|ShareDeletedEvent>
+ * @template-implements IEventListener<ShareCreatedEvent|ShareDeletedEvent|ShareAcceptedEvent|ShareDeletedFromSelfEvent>
  */
 class SharingEventListener extends Action implements IEventListener {
+	#[\Override]
 	public function handle(Event $event): void {
 		if ($event instanceof ShareCreatedEvent) {
 			$this->shareCreated($event);
 		} elseif ($event instanceof ShareDeletedEvent) {
 			$this->shareDeleted($event);
+		} elseif ($event instanceof ShareAcceptedEvent) {
+			$this->logRecipientAction(Operation::ShareAccepted, 'accepted', $event->getShare());
+		} elseif ($event instanceof ShareDeletedFromSelfEvent) {
+			$this->logRecipientAction(Operation::ShareLeft, 'left', $event->getShare());
 		}
+	}
+
+	private function logRecipientAction(Operation $operation, string $action, IShare $share): void {
+		$this->log(
+			$operation,
+			'The share of the %s with ID "%s" for "%s" was ' . $action . ' (Share ID: %s)',
+			[
+				'itemType' => $share->getNodeType(),
+				'itemSource' => $share->getNodeId(),
+				'shareWith' => $share->getSharedWith(),
+				'id' => $share->getId(),
+				'shareType' => $share->getShareType(),
+			],
+			[
+				'itemType',
+				'itemSource',
+				'shareWith',
+				'id',
+			]
+		);
 	}
 
 	private function shareCreated(ShareCreatedEvent $event): void {
@@ -42,6 +70,7 @@ class SharingEventListener extends Action implements IEventListener {
 
 		match ($share->getShareType()) {
 			IShare::TYPE_LINK => $this->log(
+				Operation::ShareCreated,
 				'The %s "%s" with ID "%s" has been shared via link with permissions "%s" (Share ID: %s)',
 				$params,
 				[
@@ -53,6 +82,7 @@ class SharingEventListener extends Action implements IEventListener {
 				]
 			),
 			IShare::TYPE_USER => $this->log(
+				Operation::ShareCreated,
 				'The %s "%s" with ID "%s" has been shared to the user "%s" with permissions "%s"  (Share ID: %s)',
 				$params,
 				[
@@ -65,6 +95,7 @@ class SharingEventListener extends Action implements IEventListener {
 				]
 			),
 			IShare::TYPE_GROUP => $this->log(
+				Operation::ShareCreated,
 				'The %s "%s" with ID "%s" has been shared to the group "%s" with permissions "%s"  (Share ID: %s)',
 				$params,
 				[
@@ -77,6 +108,7 @@ class SharingEventListener extends Action implements IEventListener {
 				]
 			),
 			IShare::TYPE_ROOM => $this->log(
+				Operation::ShareCreated,
 				'The %s "%s" with ID "%s" has been shared to the room "%s" with permissions "%s" (Share ID: %s)',
 				$params,
 				[
@@ -89,6 +121,7 @@ class SharingEventListener extends Action implements IEventListener {
 				]
 			),
 			IShare::TYPE_EMAIL => $this->log(
+				Operation::ShareCreated,
 				'The %s "%s" with ID "%s" has been shared to the email recipient "%s" with permissions "%s" (Share ID: %s)',
 				$params,
 				[
@@ -101,6 +134,7 @@ class SharingEventListener extends Action implements IEventListener {
 				]
 			),
 			IShare::TYPE_CIRCLE => $this->log(
+				Operation::ShareCreated,
 				'The %s "%s" with ID "%s" has been shared to the circle "%s" with permissions "%s" (Share ID: %s)',
 				$params,
 				[
@@ -113,6 +147,7 @@ class SharingEventListener extends Action implements IEventListener {
 				]
 			),
 			IShare::TYPE_REMOTE => $this->log(
+				Operation::ShareCreated,
 				'The %s "%s" with ID "%s" has been shared to the remote user "%s" with permissions "%s" (Share ID: %s)',
 				$params,
 				[
@@ -125,6 +160,7 @@ class SharingEventListener extends Action implements IEventListener {
 				]
 			),
 			IShare::TYPE_REMOTE_GROUP => $this->log(
+				Operation::ShareCreated,
 				'The %s "%s" with ID "%s" has been shared to the remote group "%s" with permissions "%s" (Share ID: %s)',
 				$params,
 				[
@@ -137,19 +173,8 @@ class SharingEventListener extends Action implements IEventListener {
 				]
 			),
 			IShare::TYPE_DECK => $this->log(
+				Operation::ShareCreated,
 				'The %s "%s" with ID "%s" has been shared to the deck card "%s" with permissions "%s" (Share ID: %s)',
-				$params,
-				[
-					'itemType',
-					'path',
-					'itemSource',
-					'shareWith',
-					'permissions',
-					'id',
-				]
-			),
-			IShare::TYPE_SCIENCEMESH => $this->log(
-				'The %s "%s" with ID "%s" has been shared to the sciencemesh user "%s" with permissions "%s" (Share ID: %s)',
 				$params,
 				[
 					'itemType',
@@ -177,6 +202,7 @@ class SharingEventListener extends Action implements IEventListener {
 
 		match ($share->getShareType()) {
 			IShare::TYPE_LINK => $this->log(
+				Operation::ShareDeleted,
 				'The %s "%s" with ID "%s" has been unshared (Share ID: %s)',
 				$params,
 				[
@@ -187,6 +213,7 @@ class SharingEventListener extends Action implements IEventListener {
 				]
 			),
 			IShare::TYPE_USER => $this->log(
+				Operation::ShareDeleted,
 				'The %s "%s" with ID "%s" has been unshared from the user "%s" (Share ID: %s)',
 				$params,
 				[
@@ -198,6 +225,7 @@ class SharingEventListener extends Action implements IEventListener {
 				]
 			),
 			IShare::TYPE_GROUP => $this->log(
+				Operation::ShareDeleted,
 				'The %s "%s" with ID "%s" has been unshared from the group "%s" (Share ID: %s)',
 				$params,
 				[
@@ -209,6 +237,7 @@ class SharingEventListener extends Action implements IEventListener {
 				]
 			),
 			IShare::TYPE_ROOM => $this->log(
+				Operation::ShareDeleted,
 				'The %s "%s" with ID "%s" has been unshared from the room "%s" (Share ID: %s)',
 				$params,
 				[
@@ -220,6 +249,7 @@ class SharingEventListener extends Action implements IEventListener {
 				]
 			),
 			IShare::TYPE_EMAIL => $this->log(
+				Operation::ShareDeleted,
 				'The %s "%s" with ID "%s" has been unshared from the email recipient "%s" (Share ID: %s)',
 				$params,
 				[
@@ -231,6 +261,7 @@ class SharingEventListener extends Action implements IEventListener {
 				]
 			),
 			IShare::TYPE_CIRCLE => $this->log(
+				Operation::ShareDeleted,
 				'The %s "%s" with ID "%s" has been unshared from the circle "%s" (Share ID: %s)',
 				$params,
 				[
@@ -242,6 +273,7 @@ class SharingEventListener extends Action implements IEventListener {
 				]
 			),
 			IShare::TYPE_REMOTE => $this->log(
+				Operation::ShareDeleted,
 				'The %s "%s" with ID "%s" has been unshared from the remote user "%s" (Share ID: %s)',
 				$params,
 				[
@@ -253,6 +285,7 @@ class SharingEventListener extends Action implements IEventListener {
 				]
 			),
 			IShare::TYPE_REMOTE_GROUP => $this->log(
+				Operation::ShareDeleted,
 				'The %s "%s" with ID "%s" has been unshared from the remote group "%s" (Share ID: %s)',
 				$params,
 				[
@@ -264,18 +297,8 @@ class SharingEventListener extends Action implements IEventListener {
 				]
 			),
 			IShare::TYPE_DECK => $this->log(
+				Operation::ShareDeleted,
 				'The %s "%s" with ID "%s" has been unshared from the deck card "%s" (Share ID: %s)',
-				$params,
-				[
-					'itemType',
-					'fileTarget',
-					'itemSource',
-					'shareWith',
-					'id',
-				]
-			),
-			IShare::TYPE_SCIENCEMESH => $this->log(
-				'The %s "%s" with ID "%s" has been unshared from the sciencemesh user "%s" (Share ID: %s)',
 				$params,
 				[
 					'itemType',

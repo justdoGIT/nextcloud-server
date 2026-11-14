@@ -5,6 +5,7 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OC\Console;
 
 use ArgumentCountError;
@@ -13,6 +14,7 @@ use OC\NeedsUpdateException;
 use OC\SystemConfig;
 use OCP\App\AppPathNotFoundException;
 use OCP\App\IAppManager;
+use OCP\Console\Attribute\AsCommand;
 use OCP\Console\ConsoleEvent;
 use OCP\Defaults;
 use OCP\EventDispatcher\IEventDispatcher;
@@ -20,6 +22,7 @@ use OCP\IConfig;
 use OCP\IRequest;
 use OCP\Server;
 use OCP\ServerVersion;
+use OCP\Util;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Application as SymfonyApplication;
@@ -68,27 +71,45 @@ class Application {
 		} catch (\RuntimeException $e) {
 			//expected if there are extra options
 		}
-		if ($input->getOption('no-warnings')) {
+		// Honour both Symfony --quiet/-q and our --no-warnings before any
+		// early stderr chatter so scripted upgrades stay silent.
+		if ($input->getOption('no-warnings') || $input->getOption('quiet')) {
 			$output->setVerbosity(OutputInterface::VERBOSITY_QUIET);
 		}
 
-		if ($this->memoryInfo->isMemoryLimitSufficient() === false) {
+		if (!$output->isQuiet() && $this->memoryInfo->isMemoryLimitSufficient() === false) {
 			$output->getErrorOutput()->writeln(
-				'<comment>The current PHP memory limit ' .
-				'is below the recommended value of 512MB.</comment>'
+				'<comment>The current PHP memory limit '
+				. 'is below the recommended value of 512MB.</comment>'
 			);
 		}
 
 		try {
 			require_once __DIR__ . '/../../../core/register_command.php';
 			if ($this->config->getSystemValueBool('installed', false)) {
-				if (\OCP\Util::needUpgrade()) {
+				if (Util::needUpgrade()) {
 					throw new NeedsUpdateException();
 				} elseif ($this->config->getSystemValueBool('maintenance')) {
+					if ($this->appManager->isEnabledForAnyone('app_api')) {
+						// AppAPI must stay usable during maintenance mode;
+						// loading commands from register_command.php is intentionally skipped.
+						$this->appManager->loadApp('app_api');
+						$info = $this->appManager->getAppInfo('app_api');
+						if (isset($info['commands'])) {
+							try {
+								$this->loadCommandsFromInfoXml($info['commands']);
+							} catch (\Throwable $e) {
+								$output->getErrorOutput()->writeln('<error>' . $e->getMessage() . '</error>');
+								$this->logger->error($e->getMessage(), [
+									'exception' => $e,
+								]);
+							}
+						}
+					}
 					$this->writeMaintenanceModeInfo($input, $output);
 				} else {
 					$this->appManager->loadApps();
-					foreach ($this->appManager->getInstalledApps() as $app) {
+					foreach ($this->appManager->getEnabledApps() as $app) {
 						try {
 							$appPath = $this->appManager->getAppPath($app);
 						} catch (AppPathNotFoundException) {
@@ -100,14 +121,13 @@ class Application {
 							try {
 								$this->loadCommandsFromInfoXml($info['commands']);
 							} catch (\Throwable $e) {
-								$output->writeln('<error>' . $e->getMessage() . '</error>');
+								$output->getErrorOutput()->writeln('<error>' . $e->getMessage() . '</error>');
 								$this->logger->error($e->getMessage(), [
 									'exception' => $e,
 								]);
 							}
 						}
 						// load from register_command.php
-						\OC_App::registerAutoloading($app, $appPath);
 						$file = $appPath . '/appinfo/register_command.php';
 						if (file_exists($file)) {
 							try {
@@ -120,12 +140,16 @@ class Application {
 						}
 					}
 				}
-			} elseif ($input->getArgument('command') !== '_completion' && $input->getArgument('command') !== 'maintenance:install') {
+			} elseif (!$output->isQuiet()
+				&& $input->getArgument('command') !== '_completion'
+				&& $input->getArgument('command') !== 'maintenance:install') {
 				$errorOutput = $output->getErrorOutput();
 				$errorOutput->writeln('Nextcloud is not installed - only a limited number of commands are available');
 			}
 		} catch (NeedsUpdateException) {
-			if ($input->getArgument('command') !== '_completion') {
+			if (!$output->isQuiet()
+				&& $input->getArgument('command') !== '_completion'
+				&& $input->getArgument('command') !== 'upgrade') {
 				$errorOutput = $output->getErrorOutput();
 				$errorOutput->writeln('Nextcloud or one of the apps require upgrade - only a limited number of commands are available');
 				$errorOutput->writeln('You may use your browser or the occ upgrade command to do the upgrade');
@@ -155,12 +179,18 @@ class Application {
 	 * @return void
 	 */
 	private function writeMaintenanceModeInfo(InputInterface $input, ConsoleOutputInterface $output): void {
-		if ($input->getArgument('command') !== '_completion'
+		if (!$output->isQuiet()
+			&& $input->getArgument('command') !== '_completion'
 			&& $input->getArgument('command') !== 'maintenance:mode'
 			&& $input->getArgument('command') !== 'status') {
 			$errOutput = $output->getErrorOutput();
-			$errOutput->writeln('<comment>Nextcloud is in maintenance mode, no apps are loaded.</comment>');
-			$errOutput->writeln('<comment>Commands provided by apps are unavailable.</comment>');
+			if ($this->appManager->isEnabledForAnyone('app_api')) {
+				$errOutput->writeln('<comment>Nextcloud is in maintenance mode, only AppAPI commands are loaded.</comment>');
+				$errOutput->writeln('<comment>Commands provided by other apps are unavailable.</comment>');
+			} else {
+				$errOutput->writeln('<comment>Nextcloud is in maintenance mode, no apps are loaded.</comment>');
+				$errOutput->writeln('<comment>Commands provided by apps are unavailable.</comment>');
+			}
 		}
 	}
 
@@ -192,6 +222,25 @@ class Application {
 	 */
 	private function loadCommandsFromInfoXml(iterable $commands): void {
 		foreach ($commands as $command) {
+			if (class_exists($command)) {
+				$reflectionClass = new \ReflectionClass($command);
+				if ($reflectionClass->getAttributes(AsCommand::class) !== []) {
+					$this->application->addCommand(new CommandAdapter($command, null, \OC::$server));
+					continue;
+				}
+
+				$hasMethodCommands = false;
+				foreach ($reflectionClass->getMethods(\ReflectionMethod::IS_PUBLIC) as $reflectionMethod) {
+					if ($reflectionMethod->getAttributes(AsCommand::class) !== []) {
+						$this->application->addCommand(new CommandAdapter($command, $reflectionMethod->getName(), \OC::$server));
+						$hasMethodCommands = true;
+					}
+				}
+				if ($hasMethodCommands) {
+					continue;
+				}
+			}
+
 			try {
 				$c = Server::get($command);
 			} catch (ContainerExceptionInterface $e) {
@@ -206,7 +255,7 @@ class Application {
 				}
 			}
 
-			$this->application->add($c);
+			$this->application->addCommand($c);
 		}
 	}
 }

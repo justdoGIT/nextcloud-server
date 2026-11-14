@@ -31,21 +31,24 @@ class WellKnownUrls implements ISetupCheck {
 	) {
 	}
 
+	#[\Override]
 	public function getCategory(): string {
 		return 'network';
 	}
 
+	#[\Override]
 	public function getName(): string {
 		return $this->l10n->t('.well-known URLs');
 	}
 
+	#[\Override]
 	public function run(): SetupResult {
 		if (!$this->config->getSystemValueBool('check_for_working_wellknown_setup', true)) {
 			return SetupResult::info($this->l10n->t('`check_for_working_wellknown_setup` is set to false in your configuration, so this check was skipped.'));
 		}
 
 		$urls = [
-			['get', '/.well-known/webfinger', [200, 404], true],
+			['get', '/.well-known/webfinger', [200, 400, 404], true], // 400 indicates a handler is installed but (correctly) failed because we didn't specify a resource
 			['get', '/.well-known/nodeinfo', [200, 404], true],
 			['propfind', '/.well-known/caldav', [207], false],
 			['propfind', '/.well-known/carddav', [207], false],
@@ -56,7 +59,7 @@ class WellKnownUrls implements ISetupCheck {
 			$works = null;
 			foreach ($this->runRequest($verb, $url, $requestOptions, isRootRequest: true) as $response) {
 				// Check that the response status matches
-				$works = in_array($response->getStatusCode(), $validStatuses);
+				$works = in_array($response->getStatusCode(), $validStatuses, true);
 				// and (if needed) the custom Nextcloud header is set
 				if ($checkCustomHeader) {
 					$works = $works && !empty($response->getHeader('X-NEXTCLOUD-WELL-KNOWN'));

@@ -5,6 +5,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2022 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Listener;
 
 use OCA\DAV\BackgroundJob\UserStatusAutomation;
@@ -17,12 +18,12 @@ use OCP\EventDispatcher\IEventListener;
 /** @template-implements IEventListener<BeforePreferenceSetEvent|BeforePreferenceDeletedEvent> */
 class UserPreferenceListener implements IEventListener {
 
-	protected IJobList $jobList;
-
-	public function __construct(IJobList $jobList) {
-		$this->jobList = $jobList;
+	public function __construct(
+		protected IJobList $jobList,
+	) {
 	}
 
+	#[\Override]
 	public function handle(Event $event): void {
 		if ($event instanceof BeforePreferenceSetEvent) {
 			if ($event->getAppId() === 'dav' && $event->getConfigKey() === 'user_status_automation' && $event->getConfigValue() === 'yes') {

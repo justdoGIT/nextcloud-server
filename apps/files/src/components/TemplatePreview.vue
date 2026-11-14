@@ -5,7 +5,8 @@
 
 <template>
 	<li class="template-picker__item">
-		<input :id="id"
+		<input
+			:id="id"
 			ref="input"
 			:checked="checked"
 			type="radio"
@@ -13,10 +14,12 @@
 			name="template-picker"
 			@change="onCheck">
 
-		<label :for="id" class="template-picker__label">
-			<div class="template-picker__preview"
+		<label :for="id" class="template-picker__label" @click="onClick">
+			<div
+				class="template-picker__preview"
 				:class="failedPreview ? 'template-picker__preview--failed' : ''">
-				<img class="template-picker__image"
+				<img
+					class="template-picker__image"
 					:src="realPreviewUrl"
 					alt=""
 					draggable="false"
@@ -33,7 +36,7 @@
 <script>
 import { encodePath } from '@nextcloud/paths'
 import { generateUrl } from '@nextcloud/router'
-import { getToken, isPublic } from '../utils/davUtils.js'
+import { getSharingToken, isPublicShare } from '@nextcloud/sharing/public'
 
 // preview width generation
 const previewWidth = 256
@@ -47,35 +50,44 @@ export default {
 			type: String,
 			required: true,
 		},
+
 		checked: {
 			type: Boolean,
 			default: false,
 		},
+
 		fileid: {
 			type: [String, Number],
 			required: true,
 		},
+
 		filename: {
 			type: String,
 			required: true,
 		},
+
 		previewUrl: {
 			type: String,
 			default: null,
 		},
+
 		hasPreview: {
 			type: Boolean,
 			default: true,
 		},
+
 		mime: {
 			type: String,
 			required: true,
 		},
+
 		ratio: {
 			type: Number,
 			default: null,
 		},
 	},
+
+	emits: ['check', 'confirmClick'],
 
 	data() {
 		return {
@@ -107,8 +119,8 @@ export default {
 				return this.previewUrl
 			}
 			// TODO: find a nicer standard way of doing this?
-			if (isPublic()) {
-				return generateUrl(`/apps/files_sharing/publicpreview/${getToken()}?fileId=${this.fileid}&file=${encodePath(this.filename)}&x=${previewWidth}&y=${previewWidth}&a=1`)
+			if (isPublicShare()) {
+				return generateUrl(`/apps/files_sharing/publicpreview/${getSharingToken()}?fileId=${this.fileid}&file=${encodePath(this.filename)}&x=${previewWidth}&y=${previewWidth}&a=1`)
 			}
 			return generateUrl(`/core/preview?fileId=${this.fileid}&x=${previewWidth}&y=${previewWidth}&a=1`)
 		},
@@ -122,11 +134,19 @@ export default {
 		onCheck() {
 			this.$emit('check', this.fileid)
 		},
+
 		onFailure() {
 			this.failedPreview = true
 		},
+
 		focus() {
 			this.$refs.input?.focus()
+		},
+
+		onClick() {
+			if (this.checked) {
+				this.$emit('confirmClick', this.fileid)
+			}
 		},
 	},
 }
@@ -196,12 +216,9 @@ export default {
 	}
 
 	&__title {
-		overflow: hidden;
 		// also count preview border
-		max-width: calc(var(--width) + 2*2px);
+		max-width: calc(var(--width) + 2 * 2px);
 		padding: var(--margin);
-		white-space: nowrap;
-		text-overflow: ellipsis;
 	}
 }
 

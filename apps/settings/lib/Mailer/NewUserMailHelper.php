@@ -1,8 +1,10 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2017 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Settings\Mailer;
 
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -18,25 +20,6 @@ use OCP\Security\ICrypto;
 use OCP\Security\ISecureRandom;
 
 class NewUserMailHelper {
-	/** @var Defaults */
-	private $themingDefaults;
-	/** @var IURLGenerator */
-	private $urlGenerator;
-	/** @var IFactory */
-	private $l10nFactory;
-	/** @var IMailer */
-	private $mailer;
-	/** @var ISecureRandom */
-	private $secureRandom;
-	/** @var ITimeFactory */
-	private $timeFactory;
-	/** @var IConfig */
-	private $config;
-	/** @var ICrypto */
-	private $crypto;
-	/** @var string */
-	private $fromAddress;
-
 	/**
 	 * @param Defaults $themingDefaults
 	 * @param IURLGenerator $urlGenerator
@@ -48,24 +31,17 @@ class NewUserMailHelper {
 	 * @param ICrypto $crypto
 	 * @param string $fromAddress
 	 */
-	public function __construct(Defaults $themingDefaults,
-		IURLGenerator $urlGenerator,
-		IFactory $l10nFactory,
-		IMailer $mailer,
-		ISecureRandom $secureRandom,
-		ITimeFactory $timeFactory,
-		IConfig $config,
-		ICrypto $crypto,
-		$fromAddress) {
-		$this->themingDefaults = $themingDefaults;
-		$this->urlGenerator = $urlGenerator;
-		$this->l10nFactory = $l10nFactory;
-		$this->mailer = $mailer;
-		$this->secureRandom = $secureRandom;
-		$this->timeFactory = $timeFactory;
-		$this->config = $config;
-		$this->crypto = $crypto;
-		$this->fromAddress = $fromAddress;
+	public function __construct(
+		private Defaults $themingDefaults,
+		private IURLGenerator $urlGenerator,
+		private IFactory $l10nFactory,
+		private IMailer $mailer,
+		private ISecureRandom $secureRandom,
+		private ITimeFactory $timeFactory,
+		private IConfig $config,
+		private ICrypto $crypto,
+		private $fromAddress,
+	) {
 	}
 
 	/**
@@ -100,6 +76,7 @@ class NewUserMailHelper {
 			'instancename' => $this->themingDefaults->getName(),
 			'resetTokenGenerated' => $generatePasswordResetToken,
 		]);
+		$emailTemplate->setLanguage($l10n->getLanguageCode());
 
 		$emailTemplate->setSubject($l10n->t('Your %s account was created', [$this->themingDefaults->getName()]));
 		$emailTemplate->addHeader();

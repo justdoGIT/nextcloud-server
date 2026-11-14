@@ -5,49 +5,70 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\User_LDAP;
 
-use OCA\User_LDAP\Mapping\GroupMapping;
-use OCA\User_LDAP\Mapping\UserMapping;
 use OCP\ICache;
+use OCP\ICacheFactory;
 use OCP\Server;
 
+/**
+ * @template T
+ */
 abstract class Proxy {
-	/** @var array<string,Access> */
-	private static array $accesses = [];
-	private ILDAPWrapper $ldap;
 	private ?bool $isSingleBackend = null;
 	private ?ICache $cache = null;
-	private AccessFactory $accessFactory;
+
+	/** @var T[] */
+	protected array $backends = [];
+	/** @var ?T */
+	protected $refBackend = null;
+
+	protected bool $isSetUp = false;
 
 	public function __construct(
-		ILDAPWrapper $ldap,
-		AccessFactory $accessFactory,
+		private Helper $helper,
+		private ILDAPWrapper $ldap,
+		private AccessFactory $accessFactory,
 	) {
-		$this->ldap = $ldap;
-		$this->accessFactory = $accessFactory;
-		$memcache = \OC::$server->getMemCacheFactory();
+		$memcache = Server::get(ICacheFactory::class);
 		if ($memcache->isAvailable()) {
 			$this->cache = $memcache->createDistributed();
 		}
 	}
 
-	private function addAccess(string $configPrefix): void {
-		$userMap = Server::get(UserMapping::class);
-		$groupMap = Server::get(GroupMapping::class);
+	protected function setup(): void {
+		if ($this->isSetUp) {
+			return;
+		}
 
-		$connector = new Connection($this->ldap, $configPrefix);
-		$access = $this->accessFactory->get($connector);
-		$access->setUserMapper($userMap);
-		$access->setGroupMapper($groupMap);
-		self::$accesses[$configPrefix] = $access;
+		$serverConfigPrefixes = $this->helper->getServerConfigurationPrefixes(true);
+		foreach ($serverConfigPrefixes as $configPrefix) {
+			$this->backends[$configPrefix] = $this->newInstance($configPrefix);
+
+			if (is_null($this->refBackend)) {
+				$this->refBackend = $this->backends[$configPrefix];
+			}
+		}
+
+		$this->isSetUp = true;
+	}
+
+	/**
+	 * @return T
+	 */
+	abstract protected function newInstance(string $configPrefix): object;
+
+	/**
+	 * @return T
+	 */
+	public function getBackend(string $configPrefix): object {
+		$this->setup();
+		return $this->backends[$configPrefix];
 	}
 
 	protected function getAccess(string $configPrefix): Access {
-		if (!isset(self::$accesses[$configPrefix])) {
-			$this->addAccess($configPrefix);
-		}
-		return self::$accesses[$configPrefix];
+		return $this->accessFactory->getAccessForPrefix($configPrefix);
 	}
 
 	/**

@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2020 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\UserStatus\Connector;
 
 use DateTimeImmutable;
@@ -29,27 +30,26 @@ class UserStatus implements IUserStatus {
 	/** @var DateTimeImmutable|null */
 	private $clearAt;
 
-	/** @var Db\UserStatus */
-	private $internalStatus;
+	public function __construct(
+		private Db\UserStatus $internalStatus,
+	) {
+		$this->userId = $this->internalStatus->getUserId();
+		$this->status = $this->internalStatus->getStatus();
+		$this->message = $this->internalStatus->getCustomMessage();
+		$this->icon = $this->internalStatus->getCustomIcon();
 
-	public function __construct(Db\UserStatus $status) {
-		$this->internalStatus = $status;
-		$this->userId = $status->getUserId();
-		$this->status = $status->getStatus();
-		$this->message = $status->getCustomMessage();
-		$this->icon = $status->getCustomIcon();
-
-		if ($status->getStatus() === IUserStatus::INVISIBLE) {
+		if ($this->internalStatus->getStatus() === IUserStatus::INVISIBLE) {
 			$this->status = IUserStatus::OFFLINE;
 		}
-		if ($status->getClearAt() !== null) {
-			$this->clearAt = DateTimeImmutable::createFromFormat('U', (string)$status->getClearAt());
+		if ($this->internalStatus->getClearAt() !== null) {
+			$this->clearAt = DateTimeImmutable::createFromFormat('U', (string)$this->internalStatus->getClearAt());
 		}
 	}
 
 	/**
 	 * @inheritDoc
 	 */
+	#[\Override]
 	public function getUserId(): string {
 		return $this->userId;
 	}
@@ -57,6 +57,7 @@ class UserStatus implements IUserStatus {
 	/**
 	 * @inheritDoc
 	 */
+	#[\Override]
 	public function getStatus(): string {
 		return $this->status;
 	}
@@ -64,6 +65,7 @@ class UserStatus implements IUserStatus {
 	/**
 	 * @inheritDoc
 	 */
+	#[\Override]
 	public function getMessage(): ?string {
 		return $this->message;
 	}
@@ -71,6 +73,7 @@ class UserStatus implements IUserStatus {
 	/**
 	 * @inheritDoc
 	 */
+	#[\Override]
 	public function getIcon(): ?string {
 		return $this->icon;
 	}
@@ -78,6 +81,7 @@ class UserStatus implements IUserStatus {
 	/**
 	 * @inheritDoc
 	 */
+	#[\Override]
 	public function getClearAt(): ?DateTimeImmutable {
 		return $this->clearAt;
 	}

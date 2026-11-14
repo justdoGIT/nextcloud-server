@@ -4,18 +4,18 @@
  */
 
 import type { INode } from '@nextcloud/files'
-import type { UserConfig } from '../types'
-import { FileListFilter, registerFileListFilter } from '@nextcloud/files'
+import type { UserConfig } from '../types.ts'
+
 import { subscribe } from '@nextcloud/event-bus'
+import { FileListFilter, registerFileListFilter } from '@nextcloud/files'
 import { loadState } from '@nextcloud/initial-state'
 
 class HiddenFilesFilter extends FileListFilter {
-
 	private showHidden?: boolean
 
 	constructor() {
 		super('files:hidden', 0)
-		this.showHidden = loadState<UserConfig>('files', 'config', { show_hidden: false }).show_hidden
+		this.showHidden = loadState<Partial<UserConfig>>('files', 'config', { show_hidden: false }).show_hidden
 
 		subscribe('files:config:updated', ({ key, value }) => {
 			if (key === 'show_hidden') {
@@ -31,7 +31,6 @@ class HiddenFilesFilter extends FileListFilter {
 		}
 		return nodes.filter((node) => (node.attributes.hidden !== true && !node.basename.startsWith('.')))
 	}
-
 }
 
 /**

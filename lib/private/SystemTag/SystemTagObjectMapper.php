@@ -7,9 +7,10 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OC\SystemTag;
 
-use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use OCP\DB\Exception;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\EventDispatcher\IEventDispatcher;
 use OCP\IDBConnection;
@@ -17,7 +18,10 @@ use OCP\SystemTag\ISystemTag;
 use OCP\SystemTag\ISystemTagManager;
 use OCP\SystemTag\ISystemTagObjectMapper;
 use OCP\SystemTag\MapperEvent;
+use OCP\SystemTag\TagAssignedEvent;
 use OCP\SystemTag\TagNotFoundException;
+use OCP\SystemTag\TagUnassignedEvent;
+use Override;
 
 class SystemTagObjectMapper implements ISystemTagObjectMapper {
 	public const RELATION_TABLE = 'systemtag_object_mapping';
@@ -29,9 +33,7 @@ class SystemTagObjectMapper implements ISystemTagObjectMapper {
 	) {
 	}
 
-	/**
-	 * {@inheritdoc}
-	 */
+	#[Override]
 	public function getTagIdsForObjects($objIds, string $objectType): array {
 		if (!\is_array($objIds)) {
 			$objIds = [$objIds];
@@ -55,9 +57,9 @@ class SystemTagObjectMapper implements ISystemTagObjectMapper {
 		foreach ($chunks as $chunk) {
 			$query->setParameter('objectids', $chunk, IQueryBuilder::PARAM_STR_ARRAY);
 			$result = $query->executeQuery();
-			while ($row = $result->fetch()) {
+			while ($row = $result->fetchAssociative()) {
 				$objectId = $row['objectid'];
-				$mapping[$objectId][] = $row['systemtagid'];
+				$mapping[$objectId][] = (string)$row['systemtagid'];
 			}
 
 			$result->closeCursor();
@@ -69,6 +71,7 @@ class SystemTagObjectMapper implements ISystemTagObjectMapper {
 	/**
 	 * {@inheritdoc}
 	 */
+	#[\Override]
 	public function getObjectIdsForTags($tagIds, string $objectType, int $limit = 0, string $offset = ''): array {
 		if (!\is_array($tagIds)) {
 			$tagIds = [$tagIds];
@@ -98,7 +101,7 @@ class SystemTagObjectMapper implements ISystemTagObjectMapper {
 		$objectIds = [];
 
 		$result = $query->executeQuery();
-		while ($row = $result->fetch()) {
+		while ($row = $result->fetchAssociative()) {
 			$objectIds[] = $row['objectid'];
 		}
 		$result->closeCursor();
@@ -106,9 +109,7 @@ class SystemTagObjectMapper implements ISystemTagObjectMapper {
 		return $objectIds;
 	}
 
-	/**
-	 * {@inheritdoc}
-	 */
+	#[Override]
 	public function assignTags(string $objId, string $objectType, $tagIds): void {
 		if (!\is_array($tagIds)) {
 			$tagIds = [$tagIds];
@@ -124,7 +125,7 @@ class SystemTagObjectMapper implements ISystemTagObjectMapper {
 			->andWhere($query->expr()->eq('objecttype', $query->createNamedParameter($objectType)))
 			->andWhere($query->expr()->eq('objectid', $query->createNamedParameter($objId)));
 		$result = $query->executeQuery();
-		$rows = $result->fetchAll();
+		$rows = $result->fetchAllAssociative();
 		$existingTags = [];
 		foreach ($rows as $row) {
 			$existingTags[] = $row['systemtagid'];
@@ -149,29 +150,41 @@ class SystemTagObjectMapper implements ISystemTagObjectMapper {
 		foreach ($tagIds as $tagId) {
 			try {
 				$query->setParameter('tagid', $tagId);
-				$query->execute();
+				$query->executeStatement();
 				$tagsAssigned[] = $tagId;
-			} catch (UniqueConstraintViolationException $e) {
+			} catch (Exception $e) {
+				if ($e->getReason() !== Exception::REASON_UNIQUE_CONSTRAINT_VIOLATION) {
+					throw $e;
+				}
 				// ignore existing relations
 			}
 		}
+
+		$this->updateEtagForTags($tagIds);
 
 		$this->connection->commit();
 		if (empty($tagsAssigned)) {
 			return;
 		}
 
+		$tagsAssigned = array_map(static fn (string $tagId): int => (int)$tagId, $tagsAssigned);
+
 		$this->dispatcher->dispatch(MapperEvent::EVENT_ASSIGN, new MapperEvent(
 			MapperEvent::EVENT_ASSIGN,
 			$objectType,
 			$objId,
-			$tagsAssigned
+			$tagsAssigned,
 		));
+		$this->dispatcher->dispatchTyped(new TagAssignedEvent($objectType, [$objId], $tagsAssigned));
 	}
 
-	/**
-	 * {@inheritdoc}
-	 */
+	#[Override]
+	public function assignGeneratedByAITag(string $objId, string $objectType) {
+		$tag = $this->tagManager->getGeneratedByAITag();
+		$this->assignTags($objId, $objectType, [$tag->getId()]);
+	}
+
+	#[Override]
 	public function unassignTags(string $objId, string $objectType, $tagIds): void {
 		if (!\is_array($tagIds)) {
 			$tagIds = [$tagIds];
@@ -189,17 +202,39 @@ class SystemTagObjectMapper implements ISystemTagObjectMapper {
 			->setParameter('tagids', $tagIds, IQueryBuilder::PARAM_INT_ARRAY)
 			->executeStatement();
 
+		$this->updateEtagForTags($tagIds);
+
+		// convert ids to int because the event uses ints
+		$tagIds = array_map(static fn (string $tagId): int => (int)$tagId, $tagIds);
+
 		$this->dispatcher->dispatch(MapperEvent::EVENT_UNASSIGN, new MapperEvent(
 			MapperEvent::EVENT_UNASSIGN,
 			$objectType,
 			$objId,
 			$tagIds
 		));
+		$this->dispatcher->dispatchTyped(new TagUnassignedEvent($objectType, [$objId], $tagIds));
+	}
+
+	/**
+	 * Update the etag for the given tags.
+	 *
+	 * @param string[] $tagIds
+	 */
+	private function updateEtagForTags(array $tagIds): void {
+		// Update etag after assigning tags
+		$md5 = md5(json_encode(time()));
+		$query = $this->connection->getQueryBuilder();
+		$query->update('systemtag')
+			->set('etag', $query->createNamedParameter($md5))
+			->where($query->expr()->in('id', $query->createNamedParameter($tagIds, IQueryBuilder::PARAM_INT_ARRAY)));
+		$query->executeStatement();
 	}
 
 	/**
 	 * {@inheritdoc}
 	 */
+	#[\Override]
 	public function haveTag($objIds, string $objectType, string $tagId, bool $all = true): bool {
 		$this->assertTagsExist([$tagId]);
 
@@ -227,7 +262,7 @@ class SystemTagObjectMapper implements ISystemTagObjectMapper {
 			->setParameter('objecttype', $objectType);
 
 		$result = $query->executeQuery();
-		$row = $result->fetch(\PDO::FETCH_NUM);
+		$row = $result->fetchNumeric();
 		$result->closeCursor();
 
 		if ($all) {
@@ -242,7 +277,7 @@ class SystemTagObjectMapper implements ISystemTagObjectMapper {
 	 *
 	 * @param string[] $tagIds tag ids to check
 	 *
-	 * @throws \OCP\SystemTag\TagNotFoundException if at least one tag did not exist
+	 * @throws TagNotFoundException if at least one tag did not exist
 	 */
 	private function assertTagsExist(array $tagIds): void {
 		$tags = $this->tagManager->getTagsByIds($tagIds);
@@ -259,5 +294,88 @@ class SystemTagObjectMapper implements ISystemTagObjectMapper {
 				'Tags not found', 0, null, $missingTagIds
 			);
 		}
+	}
+
+	/**
+	 * {@inheritdoc}
+	 */
+	#[\Override]
+	public function setObjectIdsForTag(string $tagId, string $objectType, array $objectIds): void {
+		$currentObjectIds = $this->getObjectIdsForTags($tagId, $objectType);
+		$removedObjectIds = array_values(array_diff($currentObjectIds, $objectIds));
+		$addedObjectIds = array_values(array_diff($objectIds, $currentObjectIds));
+
+		$this->connection->beginTransaction();
+		$query = $this->connection->getQueryBuilder();
+		$query->delete(self::RELATION_TABLE)
+			->where($query->expr()->eq('systemtagid', $query->createNamedParameter($tagId, IQueryBuilder::PARAM_INT)))
+			->andWhere($query->expr()->eq('objecttype', $query->createNamedParameter($objectType)))
+			->executeStatement();
+		$this->connection->commit();
+
+		foreach ($removedObjectIds as $objectId) {
+			$this->dispatcher->dispatch(MapperEvent::EVENT_UNASSIGN, new MapperEvent(
+				MapperEvent::EVENT_UNASSIGN,
+				$objectType,
+				(string)$objectId,
+				[(int)$tagId]
+			));
+		}
+		if (!empty($removedObjectIds)) {
+			$this->dispatcher->dispatchTyped(new TagUnassignedEvent($objectType, array_map(fn ($objectId) => (string)$objectId, $removedObjectIds), [(int)$tagId]));
+		}
+
+		if (empty($objectIds)) {
+			return;
+		}
+
+		$this->connection->beginTransaction();
+		$query = $this->connection->getQueryBuilder();
+		$query->insert(self::RELATION_TABLE)
+			->values([
+				'systemtagid' => $query->createNamedParameter($tagId, IQueryBuilder::PARAM_INT),
+				'objecttype' => $query->createNamedParameter($objectType),
+				'objectid' => $query->createParameter('objectid'),
+			]);
+
+		foreach (array_unique($objectIds) as $objectId) {
+			$query->setParameter('objectid', (string)$objectId);
+			$query->executeStatement();
+		}
+
+		$this->updateEtagForTags([$tagId]);
+		$this->connection->commit();
+
+		// Dispatch assign events for new object ids
+		foreach ($addedObjectIds as $objectId) {
+			$this->dispatcher->dispatch(MapperEvent::EVENT_ASSIGN, new MapperEvent(
+				MapperEvent::EVENT_ASSIGN,
+				$objectType,
+				(string)$objectId,
+				[(int)$tagId]
+			));
+		}
+		if (!empty($addedObjectIds)) {
+			$this->dispatcher->dispatchTyped(new TagAssignedEvent($objectType, array_map(fn ($objectId) => (string)$objectId, $addedObjectIds), [(int)$tagId]));
+		}
+	}
+
+	/**
+	 * {@inheritdoc}
+	 */
+	#[\Override]
+	public function getAvailableObjectTypes(): array {
+		$query = $this->connection->getQueryBuilder();
+		$query->selectDistinct('objecttype')
+			->from(self::RELATION_TABLE);
+
+		$result = $query->executeQuery();
+		$objectTypes = [];
+		while ($row = $result->fetchAssociative()) {
+			$objectTypes[] = $row['objecttype'];
+		}
+		$result->closeCursor();
+
+		return $objectTypes;
 	}
 }

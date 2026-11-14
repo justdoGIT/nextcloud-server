@@ -10,11 +10,10 @@ declare(strict_types=1);
 namespace OCA\DAV\Tests\integration\Db;
 
 use OCA\DAV\Db\PropertyMapper;
+use OCP\Server;
 use Test\TestCase;
 
-/**
- * @group DB
- */
+#[\PHPUnit\Framework\Attributes\Group(name: 'DB')]
 class PropertyMapperTest extends TestCase {
 
 	/** @var PropertyMapper */
@@ -23,7 +22,7 @@ class PropertyMapperTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->mapper = \OC::$server->get(PropertyMapper::class);
+		$this->mapper = Server::get(PropertyMapper::class);
 	}
 
 	public function testFindNonExistent(): void {

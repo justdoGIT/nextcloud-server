@@ -5,6 +5,7 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCP;
 
 /**
@@ -12,13 +13,8 @@ namespace OCP;
  *
  * Hooks available in scope \OC\Group:
  * - preAddUser(\OC\Group\Group $group, \OC\User\User $user)
- * - postAddUser(\OC\Group\Group $group, \OC\User\User $user)
  * - preRemoveUser(\OC\Group\Group $group, \OC\User\User $user)
- * - postRemoveUser(\OC\Group\Group $group, \OC\User\User $user)
  * - preDelete(\OC\Group\Group $group)
- * - postDelete(\OC\Group\Group $group)
- * - preCreate(string $groupId)
- * - postCreate(\OC\Group\Group $group)
  *
  * @since 8.0.0
  */
@@ -37,6 +33,11 @@ interface IGroupManager {
 	 * @since 8.0.0
 	 */
 	public function addBackend($backend);
+
+	/**
+	 * @since 34.0.0
+	 */
+	public function removeBackend(GroupInterface $backend): void;
 
 	/**
 	 * @since 8.0.0
@@ -75,7 +76,7 @@ interface IGroupManager {
 	 * @param string $search
 	 * @param ?int $limit
 	 * @param ?int $offset
-	 * @return \OCP\IGroup[]
+	 * @return list<IGroup>
 	 * @since 8.0.0
 	 */
 	public function search(string $search, ?int $limit = null, ?int $offset = 0);
@@ -89,7 +90,7 @@ interface IGroupManager {
 
 	/**
 	 * @param \OCP\IUser $user
-	 * @return string[] with group names
+	 * @return list<string> with group ids
 	 * @since 8.0.0
 	 */
 	public function getUserGroupIds(IUser $user): array;
@@ -101,7 +102,7 @@ interface IGroupManager {
 	 * @param string $search
 	 * @param int $limit
 	 * @param int $offset
-	 * @return array an array of display names (value) and user ids (key)
+	 * @return array<string, string> ['user id' => 'display name']
 	 * @since 8.0.0
 	 */
 	public function displayNamesInGroup($gid, $search = '', $limit = -1, $offset = 0);

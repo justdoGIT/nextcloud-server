@@ -3,16 +3,20 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import { mapState } from 'vuex'
 import { showError } from '@nextcloud/dialogs'
+import { t } from '@nextcloud/l10n'
+import { mapState, mapStores } from 'pinia'
+import { logger } from '../logger.ts'
+import { useUserStatusStore } from '../store/userStatus.ts'
 
 export default {
 	computed: {
-		...mapState({
-			statusType: state => state.userStatus.status,
-			statusIsUserDefined: state => state.userStatus.statusIsUserDefined,
-			customIcon: state => state.userStatus.icon,
-			customMessage: state => state.userStatus.message,
+		...mapStores(useUserStatusStore),
+		...mapState(useUserStatusStore, {
+			statusType: 'status',
+			statusIsUserDefined: 'statusIsUserDefined',
+			customIcon: 'icon',
+			customMessage: 'message',
 		}),
 
 		/**
@@ -31,25 +35,27 @@ export default {
 
 			if (this.statusIsUserDefined) {
 				switch (this.statusType) {
-				case 'online':
-					return this.$t('user_status', 'Online')
+					case 'online':
+						return t('user_status', 'Online')
 
-				case 'away':
-				case 'busy':
-					return this.$t('user_status', 'Away')
+					case 'away':
+						return t('user_status', 'Away')
 
-				case 'dnd':
-					return this.$t('user_status', 'Do not disturb')
+					case 'busy':
+						return t('user_status', 'Busy')
 
-				case 'invisible':
-					return this.$t('user_status', 'Invisible')
+					case 'dnd':
+						return t('user_status', 'Do not disturb')
 
-				case 'offline':
-					return this.$t('user_status', 'Offline')
+					case 'invisible':
+						return t('user_status', 'Invisible')
+
+					case 'offline':
+						return t('user_status', 'Offline')
 				}
 			}
 
-			return this.$t('user_status', 'Set status')
+			return t('user_status', 'Set status')
 		},
 	},
 
@@ -61,10 +67,10 @@ export default {
 		 */
 		async changeStatus(statusType) {
 			try {
-				await this.$store.dispatch('setStatus', { statusType })
+				await this.userStatusStore.setStatus(statusType)
 			} catch (err) {
-				showError(this.$t('user_status', 'There was an error saving the new status'))
-				console.debug(err)
+				showError(t('user_status', 'There was an error saving the new status'))
+				logger.debug(err)
 			}
 		},
 	},

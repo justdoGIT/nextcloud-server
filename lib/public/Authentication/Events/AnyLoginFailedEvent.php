@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2022 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCP\Authentication\Events;
 
 use OCP\EventDispatcher\Event;
@@ -31,8 +32,16 @@ class AnyLoginFailedEvent extends Event {
 
 	/**
 	 * @since 26.0.0
+	 * @deprecated 31.0.0 Use getLoginName() instead
 	 */
 	public function geLoginName(): string {
+		return $this->loginName;
+	}
+
+	/**
+	 * @since 31.0.0
+	 */
+	public function getLoginName(): string {
 		return $this->loginName;
 	}
 

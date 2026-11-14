@@ -9,11 +9,12 @@
 			{{ fieldLabel }}
 		</label>
 
-		<NcTextField :id="fieldId"
+		<NcTextField
+			:id="fieldId"
+			v-model="value"
 			type="text"
-			:value.sync="value"
 			:label="fieldLabel"
-			:label-outside="true"
+			:labelOutside="true"
 			:placeholder="field.content"
 			@input="input" />
 	</div>
@@ -21,7 +22,7 @@
 
 <script lang="ts">
 import { defineComponent } from 'vue'
-import { NcTextField } from '@nextcloud/vue'
+import NcTextField from '@nextcloud/vue/components/NcTextField'
 
 export default defineComponent({
 	name: 'TemplateRichTextField',
@@ -45,10 +46,11 @@ export default defineComponent({
 
 	computed: {
 		fieldLabel() {
-			const label = this.field.name ?? this.field.alias ?? 'Unknown field'
+			const label = this.field.name || this.field.alias
 
 			return (label.charAt(0).toUpperCase() + label.slice(1))
 		},
+
 		fieldId() {
 			return 'text-field' + this.field.index
 		},

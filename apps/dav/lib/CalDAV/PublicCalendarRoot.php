@@ -5,61 +5,71 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\CalDAV;
 
+use OCP\IAppConfig;
 use OCP\IConfig;
 use OCP\IL10N;
+use OCP\IUserManager;
 use Psr\Log\LoggerInterface;
 use Sabre\DAV\Collection;
+use Sabre\DAV\Exception\NotFound;
+use Sabre\Uri;
 
 class PublicCalendarRoot extends Collection {
-
-	/** @var CalDavBackend */
-	protected $caldavBackend;
-
-	/** @var \OCP\IL10N */
-	protected $l10n;
-
-	/** @var \OCP\IConfig */
-	protected $config;
-
-	/** @var LoggerInterface */
-	private $logger;
-
-	/**
-	 * PublicCalendarRoot constructor.
-	 *
-	 * @param CalDavBackend $caldavBackend
-	 * @param IL10N $l10n
-	 * @param IConfig $config
-	 */
-	public function __construct(CalDavBackend $caldavBackend, IL10N $l10n,
-		IConfig $config, LoggerInterface $logger) {
-		$this->caldavBackend = $caldavBackend;
-		$this->l10n = $l10n;
-		$this->config = $config;
-		$this->logger = $logger;
+	public function __construct(
+		protected CalDavBackend $caldavBackend,
+		protected IL10N $l10n,
+		protected IConfig $config,
+		protected IAppConfig $appConfig,
+		private LoggerInterface $logger,
+		private IUserManager $userManager,
+	) {
 	}
 
-	/**
-	 * @inheritdoc
-	 */
-	public function getName() {
+	#[\Override]
+	public function getName(): string {
 		return 'public-calendars';
 	}
 
-	/**
-	 * @inheritdoc
-	 */
-	public function getChild($name) {
+	#[\Override]
+	public function getChild($name): PublicCalendar {
+		// Sharing via link is allowed by default, but if the option is set it should be checked.
+		if (!$this->appConfig->getValueBool('core', 'shareapi_allow_links', true)) {
+			throw new \Sabre\DAV\Exception\Forbidden();
+		}
 		$calendar = $this->caldavBackend->getPublicCalendar($name);
+		if (!$this->validateVisibility((string)$calendar['principaluri'])) {
+			throw new NotFound('Node with name \'' . $name . '\' could not be found');
+		}
 		return new PublicCalendar($this->caldavBackend, $calendar, $this->l10n, $this->config, $this->logger);
 	}
 
-	/**
-	 * @inheritdoc
-	 */
-	public function getChildren() {
+	#[\Override]
+	public function getChildren(): array {
 		return [];
+	}
+
+	/**
+	 * Checks if the public calendar should be visible or not, based on
+	 * the configuration of the `hide_disabled_user_shares` setting within
+	 * `files_sharing` and the status of the owning user (disabled or not).
+	 */
+	private function validateVisibility(string $principalUri): bool {
+		$hideCalendarsOfDisabledUsers = $this->appConfig->getValueBool(
+			'files_sharing', 'hide_disabled_user_shares', true
+		);
+
+		if (!$hideCalendarsOfDisabledUsers) {
+			return true;
+		}
+
+		[$prefix, $name] = Uri\split($principalUri);
+		if ($prefix !== 'principals/users') {
+			return true;
+		}
+
+		return $this->userManager->get((string)$name)?->isEnabled() !== false;
 	}
 }

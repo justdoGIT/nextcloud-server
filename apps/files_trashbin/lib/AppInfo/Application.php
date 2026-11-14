@@ -1,17 +1,21 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2018-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Files_Trashbin\AppInfo;
 
 use OCA\DAV\Connector\Sabre\Principal;
 use OCA\Files\Event\LoadAdditionalScriptsEvent;
+use OCA\Files_Sharing\Event\BeforeTemplateRenderedEvent;
 use OCA\Files_Trashbin\Capabilities;
 use OCA\Files_Trashbin\Events\BeforeNodeRestoredEvent;
 use OCA\Files_Trashbin\Expiration;
 use OCA\Files_Trashbin\Listener\EventListener;
+use OCA\Files_Trashbin\Listeners\BeforeTemplateRendered;
 use OCA\Files_Trashbin\Listeners\LoadAdditionalScripts;
 use OCA\Files_Trashbin\Listeners\SyncLivePhotosListener;
 use OCA\Files_Trashbin\Trash\ITrashManager;
@@ -37,6 +41,7 @@ class Application extends App implements IBootstrap {
 		parent::__construct(self::APP_ID, $urlParams);
 	}
 
+	#[\Override]
 	public function register(IRegistrationContext $context): void {
 		$context->registerCapability(Capabilities::class);
 
@@ -52,6 +57,11 @@ class Application extends App implements IBootstrap {
 			LoadAdditionalScripts::class
 		);
 
+		$context->registerEventListener(
+			BeforeTemplateRenderedEvent::class,
+			BeforeTemplateRendered::class
+		);
+
 		$context->registerEventListener(BeforeNodeRestoredEvent::class, SyncLivePhotosListener::class);
 
 		$context->registerEventListener(NodeWrittenEvent::class, EventListener::class);
@@ -62,12 +72,13 @@ class Application extends App implements IBootstrap {
 		$context->registerEventListener(BeforeNodeDeletedEvent::class, Trashbin::class);
 	}
 
+	#[\Override]
 	public function boot(IBootContext $context): void {
 		$context->injectFn([$this, 'registerTrashBackends']);
 	}
 
 	public function registerTrashBackends(ContainerInterface $serverContainer, LoggerInterface $logger, IAppManager $appManager, ITrashManager $trashManager): void {
-		foreach ($appManager->getInstalledApps() as $app) {
+		foreach ($appManager->getEnabledApps() as $app) {
 			$appInfo = $appManager->getAppInfo($app);
 			if (isset($appInfo['trash'])) {
 				$backends = $appInfo['trash'];

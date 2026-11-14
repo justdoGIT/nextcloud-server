@@ -3,41 +3,33 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import Vue from 'vue'
-import { translate as t } from '@nextcloud/l10n'
+import type { App } from 'vue'
 
-import { registerWidget, registerCustomPickerElement, NcCustomPickerRenderResult } from '@nextcloud/vue/dist/Components/NcRichText.js'
-
-import FileWidget from './views/ReferenceFileWidget.vue'
+import { t } from '@nextcloud/l10n'
+import { createApp } from 'vue'
+import { NcCustomPickerRenderResult, registerCustomPickerElement, registerWidget } from '@nextcloud/vue/components/NcRichText'
 import FileReferencePickerElement from './views/FileReferencePickerElement.vue'
-
-Vue.mixin({
-	methods: {
-		t,
-	},
-})
+import FileWidget from './views/ReferenceFileWidget.vue'
 
 registerWidget('file', (el, { richObjectType, richObject, accessible, interactive }) => {
-	const Widget = Vue.extend(FileWidget)
-	new Widget({
-		propsData: {
-			richObjectType,
-			richObject,
-			accessible,
-			interactive,
-		},
-	}).$mount(el)
-}, () => {}, { hasInteractiveView: true })
+	const app = createApp(FileWidget, {
+		richObjectType,
+		richObject,
+		accessible,
+		interactive,
+	})
+	app.mixin({ methods: { t } })
+	app.mount(el)
+}, () => {}, { hasInteractiveView: true, isResizable: true })
 
 registerCustomPickerElement('files', (el, { providerId, accessible }) => {
-	const Element = Vue.extend(FileReferencePickerElement)
-	const vueElement = new Element({
-		propsData: {
-			providerId,
-			accessible,
-		},
-	}).$mount(el)
-	return new NcCustomPickerRenderResult(vueElement.$el, vueElement)
+	const app = createApp(FileReferencePickerElement, {
+		providerId,
+		accessible,
+	})
+	app.mixin({ methods: { t } })
+	app.mount(el)
+	return new NcCustomPickerRenderResult(el, app)
 }, (el, renderResult) => {
-	renderResult.object.$destroy()
+	(renderResult.object as App).unmount()
 })

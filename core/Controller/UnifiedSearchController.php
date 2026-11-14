@@ -6,10 +6,15 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2020 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OC\Core\Controller;
 
 use InvalidArgumentException;
+use NCU\AppFramework\Http\Attribute\TokenScope;
+use OC\Core\AppInfo\Application;
+use OC\Core\AppInfo\ConfigLexicon;
 use OC\Core\ResponseDefinitions;
+use OC\Core\TokenScopes;
 use OC\Search\SearchComposer;
 use OC\Search\SearchQuery;
 use OC\Search\UnsupportedFilter;
@@ -19,6 +24,8 @@ use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\OCSController;
+use OCP\IAppConfig;
+use OCP\IL10N;
 use OCP\IRequest;
 use OCP\IURLGenerator;
 use OCP\IUserSession;
@@ -30,6 +37,7 @@ use Symfony\Component\Routing\Exception\ResourceNotFoundException;
  * @psalm-import-type CoreUnifiedSearchProvider from ResponseDefinitions
  * @psalm-import-type CoreUnifiedSearchResult from ResponseDefinitions
  */
+#[TokenScope(scope: TokenScopes::SEARCH_READ)]
 class UnifiedSearchController extends OCSController {
 	public function __construct(
 		IRequest $request,
@@ -37,6 +45,8 @@ class UnifiedSearchController extends OCSController {
 		private SearchComposer $composer,
 		private IRouter $router,
 		private IURLGenerator $urlGenerator,
+		private IL10N $l10n,
+		private IAppConfig $appConfig,
 	) {
 		parent::__construct('core', $request);
 	}
@@ -45,7 +55,7 @@ class UnifiedSearchController extends OCSController {
 	 * Get the providers for unified search
 	 *
 	 * @param string $from the url the user is currently at
-	 * @return DataResponse<Http::STATUS_OK, CoreUnifiedSearchProvider[], array{}>
+	 * @return DataResponse<Http::STATUS_OK, list<CoreUnifiedSearchProvider>, array{}>
 	 *
 	 * 200: Providers returned
 	 */
@@ -70,7 +80,7 @@ class UnifiedSearchController extends OCSController {
 	 * @param string $providerId ID of the provider
 	 * @param string $term Term to search
 	 * @param int|null $sortOrder Order of entries
-	 * @param int|null $limit Maximum amount of entries, limited to 25
+	 * @param int|null $limit Maximum amount of entries (capped by configurable unified-search.max-results-per-request, default: 25)
 	 * @param int|string|null $cursor Offset for searching
 	 * @param string $from The current user URL
 	 *
@@ -94,13 +104,19 @@ class UnifiedSearchController extends OCSController {
 		[$route, $routeParameters] = $this->getRouteInformation($from);
 
 		$limit ??= SearchQuery::LIMIT_DEFAULT;
-		$limit = max(1, min($limit, 25));
+		$maxLimit = $this->appConfig->getValueInt(Application::APP_ID, ConfigLexicon::UNIFIED_SEARCH_MAX_RESULTS_PER_REQUEST);
+		$limit = max(1, min($limit, $maxLimit));
 
 		try {
 			$filters = $this->composer->buildFilterList($providerId, $this->request->getParams());
 		} catch (UnsupportedFilter|InvalidArgumentException $e) {
 			return new DataResponse($e->getMessage(), Http::STATUS_BAD_REQUEST);
 		}
+
+		if ($filters->count() === 0) {
+			return new DataResponse($this->l10n->t('No valid filters provided'), Http::STATUS_BAD_REQUEST);
+		}
+
 		return new DataResponse(
 			$this->composer->search(
 				$this->userSession->getUser(),

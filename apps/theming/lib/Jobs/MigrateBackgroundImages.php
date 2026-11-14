@@ -30,28 +30,18 @@ class MigrateBackgroundImages extends QueuedJob {
 	// will be saved in appdata/theming/global/
 	protected const STATE_FILE_NAME = '25_dashboard_to_theming_migration_users.json';
 
-	private IAppDataFactory $appDataFactory;
-	private IJobList $jobList;
-	private IDBConnection $dbc;
-	private IAppData $appData;
-	private LoggerInterface $logger;
-
 	public function __construct(
 		ITimeFactory $time,
-		IAppDataFactory $appDataFactory,
-		IJobList $jobList,
-		IDBConnection $dbc,
-		IAppData $appData,
-		LoggerInterface $logger,
+		private IAppDataFactory $appDataFactory,
+		private IJobList $jobList,
+		private IDBConnection $dbc,
+		private IAppData $appData,
+		private LoggerInterface $logger,
 	) {
 		parent::__construct($time);
-		$this->appDataFactory = $appDataFactory;
-		$this->jobList = $jobList;
-		$this->dbc = $dbc;
-		$this->appData = $appData;
-		$this->logger = $logger;
 	}
 
+	#[\Override]
 	protected function run(mixed $argument): void {
 		if (!is_array($argument) || !isset($argument['stage'])) {
 			throw new \Exception('Job ' . self::class . ' called with wrong argument');
@@ -79,7 +69,7 @@ class MigrateBackgroundImages extends QueuedJob {
 				->andWhere($selector->expr()->eq('configvalue', $selector->createNamedParameter('custom', IQueryBuilder::PARAM_STR), IQueryBuilder::PARAM_STR))
 				->executeQuery();
 
-			$userIds = $result->fetchAll(\PDO::FETCH_COLUMN);
+			$userIds = $result->fetchFirstColumn();
 			$this->storeUserIdsToProcess($userIds);
 		} catch (\Throwable $t) {
 			$this->jobList->add(self::class, ['stage' => self::STAGE_PREPARE]);

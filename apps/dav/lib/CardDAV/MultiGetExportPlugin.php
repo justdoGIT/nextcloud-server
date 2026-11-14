@@ -6,8 +6,10 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2018 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\CardDAV;
 
+use OCP\AppFramework\Http;
 use Sabre\DAV;
 use Sabre\DAV\Server;
 use Sabre\HTTP\RequestInterface;
@@ -24,6 +26,7 @@ class MultiGetExportPlugin extends DAV\ServerPlugin {
 	 * @param Server $server
 	 * @return void
 	 */
+	#[\Override]
 	public function initialize(Server $server) {
 		$this->server = $server;
 		$this->server->on('afterMethod:REPORT', [$this, 'httpReport'], 90);
@@ -65,7 +68,7 @@ class MultiGetExportPlugin extends DAV\ServerPlugin {
 		$response->setHeader('Content-Disposition', 'attachment; filename="' . $filename . '"');
 		$response->setHeader('Content-Type', 'text/vcard');
 
-		$response->setStatus(200);
+		$response->setStatus(Http::STATUS_OK);
 		$response->setBody($output);
 
 		return true;
@@ -79,6 +82,7 @@ class MultiGetExportPlugin extends DAV\ServerPlugin {
 	 *
 	 * @return string
 	 */
+	#[\Override]
 	public function getPluginName() {
 		return 'vcf-multi-get-intercept-and-export';
 	}
@@ -94,6 +98,7 @@ class MultiGetExportPlugin extends DAV\ServerPlugin {
 	 *
 	 * @return array
 	 */
+	#[\Override]
 	public function getPluginInfo() {
 		return [
 			'name' => $this->getPluginName(),

@@ -3,10 +3,25 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import { Type as ShareTypes } from '@nextcloud/sharing'
+import { t } from '@nextcloud/l10n'
+import { ShareType } from '@nextcloud/sharing'
 
-const shareWithTitle = function(share) {
-	if (share.type === ShareTypes.SHARE_TYPE_GROUP) {
+/**
+ * Whether the source name should be shown.
+ * It is set when any sharer in between renamed the node.
+ *
+ * @param {string} originalDisplayName
+ */
+function wasRenamed(originalDisplayName) {
+	return typeof originalDisplayName === 'string' && originalDisplayName !== ''
+}
+
+/**
+ *
+ * @param share
+ */
+function shareWithTitle(share) {
+	if (share.type === ShareType.Group) {
 		return t(
 			'files_sharing',
 			'Shared with you and the group {group} by {owner}',
@@ -17,7 +32,7 @@ const shareWithTitle = function(share) {
 			undefined,
 			{ escape: false },
 		)
-	} else if (share.type === ShareTypes.SHARE_TYPE_CIRCLE) {
+	} else if (share.type === ShareType.Team) {
 		return t(
 			'files_sharing',
 			'Shared with you and {circle} by {owner}',
@@ -28,7 +43,7 @@ const shareWithTitle = function(share) {
 			undefined,
 			{ escape: false },
 		)
-	} else if (share.type === ShareTypes.SHARE_TYPE_ROOM) {
+	} else if (share.type === ShareType.Room) {
 		if (share.shareWithDisplayName) {
 			return t(
 				'files_sharing',
@@ -62,4 +77,24 @@ const shareWithTitle = function(share) {
 	}
 }
 
-export { shareWithTitle }
+/**
+ * Source name of a received share, shown on its own line.
+ * Empty when no sharer in the chain renamed the node.
+ *
+ * @param {string} [originalDisplayName]
+ * @return {string}
+ */
+function originalShareLabel(originalDisplayName = '') {
+	if (!wasRenamed(originalDisplayName)) {
+		return ''
+	}
+	return t(
+		'files_sharing',
+		'Originally as {name}',
+		{ name: originalDisplayName },
+		undefined,
+		{ escape: false },
+	)
+}
+
+export { originalShareLabel, shareWithTitle }

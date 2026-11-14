@@ -6,8 +6,10 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2017 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\FederatedFileSharing\Settings;
 
+use OCA\FederatedFileSharing\AppInfo\Application;
 use OCA\FederatedFileSharing\FederatedShareProvider;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\AppFramework\Services\IInitialState;
@@ -15,32 +17,23 @@ use OCP\Defaults;
 use OCP\IURLGenerator;
 use OCP\IUserSession;
 use OCP\Settings\ISettings;
+use OCP\Util;
 
 class Personal implements ISettings {
-	private FederatedShareProvider $federatedShareProvider;
-	private IUserSession $userSession;
-	private Defaults $defaults;
-	private IInitialState $initialState;
-	private IURLGenerator $urlGenerator;
-
 	public function __construct(
-		FederatedShareProvider $federatedShareProvider,
-		IUserSession $userSession,
-		Defaults $defaults,
-		IInitialState $initialState,
-		IURLGenerator $urlGenerator,
+		private FederatedShareProvider $federatedShareProvider,
+		private IUserSession $userSession,
+		private Defaults $defaults,
+		private IInitialState $initialState,
+		private IURLGenerator $urlGenerator,
 	) {
-		$this->federatedShareProvider = $federatedShareProvider;
-		$this->userSession = $userSession;
-		$this->defaults = $defaults;
-		$this->initialState = $initialState;
-		$this->urlGenerator = $urlGenerator;
 	}
 
 	/**
 	 * @return TemplateResponse returns the instance with all parameters set, ready to be rendered
 	 * @since 9.1
 	 */
+	#[\Override]
 	public function getForm(): TemplateResponse {
 		$cloudID = $this->userSession->getUser()->getCloudId();
 		$url = 'https://nextcloud.com/sharing#' . $cloudID;
@@ -52,16 +45,19 @@ class Personal implements ISettings {
 		$this->initialState->provideInitialState('cloudId', $cloudID);
 		$this->initialState->provideInitialState('docUrlFederated', $this->urlGenerator->linkToDocs('user-sharing-federated'));
 
-		return new TemplateResponse('federatedfilesharing', 'settings-personal', [], TemplateResponse::RENDER_AS_BLANK);
+		Util::addStyle(Application::APP_ID, 'settings-personal');
+		Util::addScript(Application::APP_ID, 'settings-personal');
+		return new TemplateResponse(Application::APP_ID, 'settings-personal', renderAs: TemplateResponse::RENDER_AS_BLANK);
 	}
 
 	/**
 	 * @return string the section ID, e.g. 'sharing'
 	 * @since 9.1
 	 */
+	#[\Override]
 	public function getSection(): ?string {
-		if ($this->federatedShareProvider->isIncomingServer2serverShareEnabled() ||
-			$this->federatedShareProvider->isIncomingServer2serverGroupShareEnabled()) {
+		if ($this->federatedShareProvider->isIncomingServer2serverShareEnabled()
+			|| $this->federatedShareProvider->isIncomingServer2serverGroupShareEnabled()) {
 			return 'sharing';
 		}
 		return null;
@@ -75,6 +71,7 @@ class Personal implements ISettings {
 	 * E.g.: 70
 	 * @since 9.1
 	 */
+	#[\Override]
 	public function getPriority(): int {
 		return 40;
 	}

@@ -11,7 +11,8 @@ namespace Test\Avatar;
 
 use OC\Avatar\GuestAvatar;
 use OCP\Files\SimpleFS\InMemoryFile;
-use PHPUnit\Framework\MockObject\MockObject;
+use OCP\IConfig;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\LoggerInterface;
 use Test\TestCase;
 
@@ -28,30 +29,52 @@ class GuestAvatarTest extends TestCase {
 
 	/**
 	 * Setups a guest avatar instance for tests.
-	 *
-	 * @before
-	 * @return void
 	 */
-	public function setupGuestAvatar() {
+	#[\PHPUnit\Framework\Attributes\Before()]
+	public function setupGuestAvatar(): void {
 		/* @var MockObject|LoggerInterface $logger */
-		$logger = $this->getMockBuilder(LoggerInterface::class)->getMock();
-		$this->guestAvatar = new GuestAvatar('einstein', $logger);
+		$logger = $this->createMock(LoggerInterface::class);
+		$config = $this->createMock(IConfig::class);
+		$this->guestAvatar = new GuestAvatar('einstein', $config, $logger);
+	}
+
+	public static function themeProvider(): array {
+		return [
+			'light theme' => ['darkTheme' => false, 'backgroundColor' => 0xe9f3f7],
+			'dark theme' => ['darkTheme' => true, 'backgroundColor' => 0x030e12],
+		];
 	}
 
 	/**
-	 * Asserts that testGet() returns the expected avatar.
+	 * Asserts that GuestAvatar::getFile() returns the expected avatar.
 	 *
-	 * For the test a static name "einstein" is used and
-	 * the generated image is compared with an expected one.
+	 * For the test a static name "einstein" is used.
 	 */
-	public function testGet(): void {
-		$this->markTestSkipped('TODO: Disable because fails on drone');
-		$avatar = $this->guestAvatar->getFile(32);
+	#[DataProvider('themeProvider')]
+	public function testGet(bool $darkTheme, int $backgroundColor): void {
+		$size = 32;
+		$avatar = $this->guestAvatar->getFile($size, $darkTheme);
 		self::assertInstanceOf(InMemoryFile::class, $avatar);
-		$expectedFile = file_get_contents(
-			__DIR__ . '/../../data/guest_avatar_einstein_32.png'
-		);
-		self::assertEquals(trim($expectedFile), trim($avatar->getContent()));
+		$content = $avatar->getContent();
+		self::assertStringStartsWith("\x89PNG\r\n\x1a\n", $content, 'The avatar is not a PNG');
+
+		$image = imagecreatefromstring($content);
+		self::assertInstanceOf(\GdImage::class, $image);
+		self::assertSame($size, imagesx($image));
+		self::assertSame($size, imagesy($image));
+		self::assertSame($backgroundColor, imagecolorat($image, 0, 0), 'The background is not the guest color');
+
+		// The anti-aliased edges depend on the GD and FreeType versions, the strokes of the letter don't
+		$letterPixels = 0;
+		for ($y = 0; $y < $size; $y++) {
+			for ($x = 0; $x < $size; $x++) {
+				if (imagecolorat($image, $x, $y) === 0x248eb5) {
+					$letterPixels++;
+				}
+			}
+		}
+		// A Noto Sans "E" at 32 px has 27 fully covered pixels
+		self::assertSame(27, $letterPixels, 'The avatar does not show a Noto Sans "E" in the guest color');
 	}
 
 	/**

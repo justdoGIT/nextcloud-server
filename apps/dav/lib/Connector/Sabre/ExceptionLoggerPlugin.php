@@ -1,10 +1,13 @@
 <?php
 
+declare(strict_types=1);
+
 /**
  * SPDX-FileCopyrightText: 2016-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\Connector\Sabre;
 
 use OCA\DAV\Connector\Sabre\Exception\FileLocked;
@@ -67,15 +70,13 @@ class ExceptionLoggerPlugin extends \Sabre\DAV\ServerPlugin {
 		ServerMaintenanceMode::class => true,
 	];
 
-	private string $appName;
-	private LoggerInterface $logger;
-
 	/**
-	 * @param string $loggerAppName app name to use when logging
+	 * @param string $appName app name to use when logging
 	 */
-	public function __construct(string $loggerAppName, LoggerInterface $logger) {
-		$this->appName = $loggerAppName;
-		$this->logger = $logger;
+	public function __construct(
+		private string $appName,
+		private LoggerInterface $logger,
+	) {
 	}
 
 	/**
@@ -89,6 +90,7 @@ class ExceptionLoggerPlugin extends \Sabre\DAV\ServerPlugin {
 	 * @param \Sabre\DAV\Server $server
 	 * @return void
 	 */
+	#[\Override]
 	public function initialize(\Sabre\DAV\Server $server) {
 		$server->on('exception', [$this, 'logException'], 10);
 	}

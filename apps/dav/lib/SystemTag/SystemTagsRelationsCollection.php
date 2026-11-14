@@ -5,6 +5,7 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\SystemTag;
 
 use OCP\Constants;
@@ -28,6 +29,8 @@ class SystemTagsRelationsCollection extends SimpleCollection {
 		IRootFolder $rootFolder,
 	) {
 		$children = [
+			// Only files are supported at the moment
+			// Also see SystemTagPlugin::OBJECTIDS_PROPERTYNAME supported types
 			new SystemTagsObjectTypeCollection(
 				'files',
 				$tagManager,
@@ -79,10 +82,12 @@ class SystemTagsRelationsCollection extends SimpleCollection {
 		parent::__construct('root', $children);
 	}
 
+	#[\Override]
 	public function getName() {
 		return 'systemtags-relations';
 	}
 
+	#[\Override]
 	public function setName($name) {
 		throw new Forbidden('Permission denied to rename this collection');
 	}

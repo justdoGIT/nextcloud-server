@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2022 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\BackgroundJob;
 
 use OCA\DAV\AppInfo\Application;
@@ -18,21 +19,19 @@ use Psr\Log\LoggerInterface;
 
 class PruneOutdatedSyncTokensJob extends TimedJob {
 
-	private IConfig $config;
-	private LoggerInterface $logger;
-	private CardDavBackend $cardDavBackend;
-	private CalDavBackend $calDavBackend;
-
-	public function __construct(ITimeFactory $timeFactory, CalDavBackend $calDavBackend, CardDavBackend $cardDavBackend, IConfig $config, LoggerInterface $logger) {
+	public function __construct(
+		ITimeFactory $timeFactory,
+		private CalDavBackend $calDavBackend,
+		private CardDavBackend $cardDavBackend,
+		private IConfig $config,
+		private LoggerInterface $logger,
+	) {
 		parent::__construct($timeFactory);
-		$this->calDavBackend = $calDavBackend;
-		$this->cardDavBackend = $cardDavBackend;
-		$this->config = $config;
-		$this->logger = $logger;
 		$this->setInterval(60 * 60 * 24); // One day
 		$this->setTimeSensitivity(self::TIME_INSENSITIVE);
 	}
 
+	#[\Override]
 	public function run($argument) {
 		$limit = max(1, (int)$this->config->getAppValue(Application::APP_ID, 'totalNumberOfSyncTokensToKeep', '10000'));
 		$retention = max(7, (int)$this->config->getAppValue(Application::APP_ID, 'syncTokensRetentionDays', '60')) * 24 * 3600;

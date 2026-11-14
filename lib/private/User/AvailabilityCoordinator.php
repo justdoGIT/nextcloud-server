@@ -12,10 +12,11 @@ namespace OC\User;
 use JsonException;
 use OCA\DAV\AppInfo\Application;
 use OCA\DAV\CalDAV\TimezoneService;
+use OCA\DAV\ConfigLexicon;
 use OCA\DAV\Service\AbsenceService;
+use OCP\IAppConfig;
 use OCP\ICache;
 use OCP\ICacheFactory;
-use OCP\IConfig;
 use OCP\IUser;
 use OCP\User\IAvailabilityCoordinator;
 use OCP\User\IOutOfOfficeData;
@@ -26,7 +27,7 @@ class AvailabilityCoordinator implements IAvailabilityCoordinator {
 
 	public function __construct(
 		ICacheFactory $cacheFactory,
-		private IConfig $config,
+		private IAppConfig $appConfig,
 		private AbsenceService $absenceService,
 		private LoggerInterface $logger,
 		private TimezoneService $timezoneService,
@@ -34,8 +35,9 @@ class AvailabilityCoordinator implements IAvailabilityCoordinator {
 		$this->cache = $cacheFactory->createLocal('OutOfOfficeData');
 	}
 
+	#[\Override]
 	public function isEnabled(): bool {
-		return $this->config->getAppValue(Application::APP_ID, 'hide_absence_settings', 'no') === 'no';
+		return !$this->appConfig->getValueBool(Application::APP_ID, ConfigLexicon::HIDE_ABSENCE_SETTINGS);
 	}
 
 	private function getCachedOutOfOfficeData(IUser $user): ?OutOfOfficeData {
@@ -87,6 +89,7 @@ class AvailabilityCoordinator implements IAvailabilityCoordinator {
 		$this->cache->set($data->getUser()->getUID(), $cachedString, 300);
 	}
 
+	#[\Override]
 	public function getCurrentOutOfOfficeData(IUser $user): ?IOutOfOfficeData {
 		$timezone = $this->getCachedTimezone($user->getUID());
 		if ($timezone === null) {
@@ -115,11 +118,13 @@ class AvailabilityCoordinator implements IAvailabilityCoordinator {
 		$this->cache->set($userId . '_timezone', $timezone, 3600);
 	}
 
+	#[\Override]
 	public function clearCache(string $userId): void {
 		$this->cache->set($userId, null, 300);
 		$this->cache->set($userId . '_timezone', null, 3600);
 	}
 
+	#[\Override]
 	public function isInEffect(IOutOfOfficeData $data): bool {
 		return $this->absenceService->isInEffect($data);
 	}

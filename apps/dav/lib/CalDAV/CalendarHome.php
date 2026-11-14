@@ -5,12 +5,20 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\CalDAV;
 
 use OCA\DAV\AppInfo\PluginManager;
+use OCA\DAV\CalDAV\Federation\FederatedCalendarFactory;
 use OCA\DAV\CalDAV\Integration\ExternalCalendar;
 use OCA\DAV\CalDAV\Integration\ICalendarProvider;
 use OCA\DAV\CalDAV\Trashbin\TrashbinHome;
+use OCP\App\IAppManager;
+use OCP\IAppConfig;
+use OCP\IConfig;
+use OCP\IL10N;
+use OCP\L10N\IFactory;
+use OCP\Server;
 use Psr\Log\LoggerInterface;
 use Sabre\CalDAV\Backend\BackendInterface;
 use Sabre\CalDAV\Backend\NotificationSupport;
@@ -25,33 +33,34 @@ use Sabre\DAV\MkCol;
 
 class CalendarHome extends \Sabre\CalDAV\CalendarHome {
 
-	/** @var \OCP\IL10N */
+	/** @var IL10N */
 	private $l10n;
 
-	/** @var \OCP\IConfig */
+	/** @var IConfig */
 	private $config;
+
+	private IAppConfig $appConfig;
 
 	/** @var PluginManager */
 	private $pluginManager;
 
-	/** @var LoggerInterface */
-	private $logger;
 	private ?array $cachedChildren = null;
 
 	public function __construct(
 		BackendInterface $caldavBackend,
 		array $principalInfo,
-		LoggerInterface $logger,
+		private LoggerInterface $logger,
+		private FederatedCalendarFactory $federatedCalendarFactory,
 		private bool $returnCachedSubscriptions,
 	) {
 		parent::__construct($caldavBackend, $principalInfo);
-		$this->l10n = \OC::$server->getL10N('dav');
-		$this->config = \OC::$server->getConfig();
+		$this->l10n = Server::get(IFactory::class)->get('dav');
+		$this->config = Server::get(IConfig::class);
+		$this->appConfig = Server::get(IAppConfig::class);
 		$this->pluginManager = new PluginManager(
 			\OC::$server,
-			\OC::$server->getAppManager()
+			Server::get(IAppManager::class)
 		);
-		$this->logger = $logger;
 	}
 
 	/**
@@ -64,6 +73,7 @@ class CalendarHome extends \Sabre\CalDAV\CalendarHome {
 	/**
 	 * @inheritdoc
 	 */
+	#[\Override]
 	public function createExtendedCollection($name, MkCol $mkCol): void {
 		$reservedNames = [
 			BirthdayService::BIRTHDAY_CALENDAR_URI,
@@ -80,6 +90,7 @@ class CalendarHome extends \Sabre\CalDAV\CalendarHome {
 	/**
 	 * @inheritdoc
 	 */
+	#[\Override]
 	public function getChildren() {
 		if ($this->cachedChildren) {
 			return $this->cachedChildren;
@@ -92,7 +103,7 @@ class CalendarHome extends \Sabre\CalDAV\CalendarHome {
 
 		if ($this->caldavBackend instanceof SchedulingSupport) {
 			$objects[] = new Inbox($this->caldavBackend, $this->principalInfo['uri']);
-			$objects[] = new Outbox($this->config, $this->principalInfo['uri']);
+			$objects[] = new Outbox($this->appConfig, $this->principalInfo['uri']);
 		}
 
 		// We're adding a notifications node, if it's supported by the backend.
@@ -102,6 +113,15 @@ class CalendarHome extends \Sabre\CalDAV\CalendarHome {
 
 		if ($this->caldavBackend instanceof CalDavBackend) {
 			$objects[] = new TrashbinHome($this->caldavBackend, $this->principalInfo);
+
+			$federatedCalendars = $this->caldavBackend->getFederatedCalendarsForUser(
+				$this->principalInfo['uri'],
+			);
+			foreach ($federatedCalendars as $federatedCalendarInfo) {
+				$objects[] = $this->federatedCalendarFactory->createFederatedCalendar(
+					$federatedCalendarInfo,
+				);
+			}
 		}
 
 		// If the backend supports subscriptions, we'll add those as well,
@@ -132,13 +152,14 @@ class CalendarHome extends \Sabre\CalDAV\CalendarHome {
 	 *
 	 * @return INode
 	 */
+	#[\Override]
 	public function getChild($name) {
 		// Special nodes
 		if ($name === 'inbox' && $this->caldavBackend instanceof SchedulingSupport) {
 			return new Inbox($this->caldavBackend, $this->principalInfo['uri']);
 		}
 		if ($name === 'outbox' && $this->caldavBackend instanceof SchedulingSupport) {
-			return new Outbox($this->config, $this->principalInfo['uri']);
+			return new Outbox($this->appConfig, $this->principalInfo['uri']);
 		}
 		if ($name === 'notifications' && $this->caldavBackend instanceof NotificationSupport) {
 			return new \Sabre\CalDAV\Notifications\Collection($this->caldavBackend, $this->principalInfo['uri']);
@@ -147,12 +168,21 @@ class CalendarHome extends \Sabre\CalDAV\CalendarHome {
 			return new TrashbinHome($this->caldavBackend, $this->principalInfo);
 		}
 
-		// Calendar - this covers all "regular" calendars, but not shared
-		// only check if the method is available
+		// Only check if the methods are available
 		if ($this->caldavBackend instanceof CalDavBackend) {
+			// Calendar - this covers all "regular" calendars, but not shared
 			$calendar = $this->caldavBackend->getCalendarByUri($this->principalInfo['uri'], $name);
 			if (!empty($calendar)) {
 				return new Calendar($this->caldavBackend, $calendar, $this->l10n, $this->config, $this->logger);
+			}
+
+			// Federated calendar
+			$federatedCalendar = $this->caldavBackend->getFederatedCalendarByUri(
+				$this->principalInfo['uri'],
+				$name,
+			);
+			if ($federatedCalendar !== null) {
+				return $this->federatedCalendarFactory->createFederatedCalendar($federatedCalendar);
 			}
 		}
 

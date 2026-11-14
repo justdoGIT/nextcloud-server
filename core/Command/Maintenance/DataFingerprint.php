@@ -5,6 +5,7 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OC\Core\Command\Maintenance;
 
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -21,14 +22,18 @@ class DataFingerprint extends Command {
 		parent::__construct();
 	}
 
+	#[\Override]
 	protected function configure() {
 		$this
 			->setName('maintenance:data-fingerprint')
 			->setDescription('update the systems data-fingerprint after a backup is restored');
 	}
 
+	#[\Override]
 	protected function execute(InputInterface $input, OutputInterface $output): int {
-		$this->config->setSystemValue('data-fingerprint', md5($this->timeFactory->getTime()));
+		$fingerPrint = md5($this->timeFactory->getTime());
+		$this->config->setSystemValue('data-fingerprint', $fingerPrint);
+		$output->writeln('<info>Updated data-fingerprint to ' . $fingerPrint . '</info>');
 		return 0;
 	}
 }

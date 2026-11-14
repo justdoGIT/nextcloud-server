@@ -2,22 +2,23 @@
  * SPDX-FileCopyrightText: 2020 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-import type { Entry, Folder, Node } from '@nextcloud/files'
 
-import { defineAsyncComponent } from 'vue'
-import { spawnDialog } from '@nextcloud/dialogs'
-import { translate as t } from '@nextcloud/l10n'
-import FileUploadSvg from '@mdi/svg/svg/file-upload.svg?raw'
+import type { Folder, NewMenuEntry, Node } from '@nextcloud/files'
 
-import Config from '../services/ConfigService'
+import FileUploadSvg from '@mdi/svg/svg/file-upload-outline.svg?raw'
+import { t } from '@nextcloud/l10n'
 import { isPublicShare } from '@nextcloud/sharing/public'
+import { spawnDialog } from '@nextcloud/vue/functions/dialog'
+import { defineAsyncComponent } from 'vue'
+import Config from '../services/ConfigService.ts'
+
 const sharingConfig = new Config()
 
 const NewFileRequestDialogVue = defineAsyncComponent(() => import('../components/NewFileRequestDialog.vue'))
 
 export const EntryId = 'file-request'
 
-export const entry = {
+export const entry: NewMenuEntry = {
 	id: EntryId,
 	displayName: t('files_sharing', 'Create file request'),
 	iconSvgInline: FileUploadSvg,
@@ -27,13 +28,18 @@ export const entry = {
 		if (isPublicShare()) {
 			return false
 		}
+		if (!sharingConfig.isPublicUploadEnabled) {
+			return false
+		}
 		// We will check for the folder permission on the dialog
 		return sharingConfig.isPublicShareAllowed
 	},
 	async handler(context: Folder, content: Node[]) {
-		spawnDialog(NewFileRequestDialogVue, {
+		await spawnDialog(NewFileRequestDialogVue, {
 			context,
 			content,
 		})
+		// The menu item that opened the dialog is gone; send focus back to New
+		document.querySelector<HTMLElement>('[data-cy-upload-picker] button')?.focus()
 	},
-} as Entry
+}

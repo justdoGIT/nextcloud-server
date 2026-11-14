@@ -1,4 +1,5 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
@@ -11,40 +12,39 @@ use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\Files\File;
 use OCP\Files\Folder;
-use OCP\Files\IRootFolder;
+use OCP\Files\IUserFolder;
 use OCP\Files\NotFoundException;
 use OCP\Files\SimpleFS\ISimpleFile;
+use OCP\Files\Storage\ISharedStorage;
 use OCP\Files\Storage\IStorage;
 use OCP\IPreview;
 use OCP\IRequest;
 use OCP\Preview\IMimeIconProvider;
+use OCP\Share\IShare;
+use PHPUnit\Framework\MockObject\MockObject;
 
 class PreviewControllerTest extends \Test\TestCase {
-	/** @var IRootFolder|\PHPUnit\Framework\MockObject\MockObject */
-	private $rootFolder;
 
-	/** @var string */
-	private $userId;
+	private string $userId;
+	private PreviewController $controller;
 
-	/** @var IPreview|\PHPUnit\Framework\MockObject\MockObject */
-	private $previewManager;
+	private IUserFolder&MockObject $userFolder;
+	private IPreview&MockObject $previewManager;
+	private IRequest&MockObject $request;
 
-	/** @var PreviewController|\PHPUnit\Framework\MockObject\MockObject */
-	private $controller;
-
+	#[\Override]
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rootFolder = $this->createMock(IRootFolder::class);
-		$this->userId = 'user';
+		$this->userFolder = $this->createMock(IUserFolder::class);
 		$this->previewManager = $this->createMock(IPreview::class);
+		$this->request = $this->createMock(IRequest::class);
 
 		$this->controller = new PreviewController(
 			'core',
-			$this->createMock(IRequest::class),
+			$this->request,
 			$this->previewManager,
-			$this->rootFolder,
-			$this->userId,
+			$this->userFolder,
 			$this->createMock(IMimeIconProvider::class)
 		);
 	}
@@ -71,12 +71,7 @@ class PreviewControllerTest extends \Test\TestCase {
 	}
 
 	public function testFileNotFound(): void {
-		$userFolder = $this->createMock(Folder::class);
-		$this->rootFolder->method('getUserFolder')
-			->with($this->equalTo($this->userId))
-			->willReturn($userFolder);
-
-		$userFolder->method('get')
+		$this->userFolder->method('get')
 			->with($this->equalTo('file'))
 			->willThrowException(new NotFoundException());
 
@@ -87,13 +82,8 @@ class PreviewControllerTest extends \Test\TestCase {
 	}
 
 	public function testNotAFile(): void {
-		$userFolder = $this->createMock(Folder::class);
-		$this->rootFolder->method('getUserFolder')
-			->with($this->equalTo($this->userId))
-			->willReturn($userFolder);
-
 		$folder = $this->createMock(Folder::class);
-		$userFolder->method('get')
+		$this->userFolder->method('get')
 			->with($this->equalTo('file'))
 			->willReturn($folder);
 
@@ -104,13 +94,8 @@ class PreviewControllerTest extends \Test\TestCase {
 	}
 
 	public function testNoPreviewAndNoIcon(): void {
-		$userFolder = $this->createMock(Folder::class);
-		$this->rootFolder->method('getUserFolder')
-			->with($this->equalTo($this->userId))
-			->willReturn($userFolder);
-
 		$file = $this->createMock(File::class);
-		$userFolder->method('get')
+		$this->userFolder->method('get')
 			->with($this->equalTo('file'))
 			->willReturn($file);
 
@@ -124,38 +109,9 @@ class PreviewControllerTest extends \Test\TestCase {
 		$this->assertEquals($expected, $res);
 	}
 
-	public function testForbiddenFile(): void {
-		$userFolder = $this->createMock(Folder::class);
-		$this->rootFolder->method('getUserFolder')
-			->with($this->equalTo($this->userId))
-			->willReturn($userFolder);
-
+	public function testNoPreview() {
 		$file = $this->createMock(File::class);
-		$userFolder->method('get')
-			->with($this->equalTo('file'))
-			->willReturn($file);
-
-		$this->previewManager->method('isAvailable')
-			->with($this->equalTo($file))
-			->willReturn(true);
-
-		$file->method('isReadable')
-			->willReturn(false);
-
-		$res = $this->controller->getPreview('file', 10, 10, true, true);
-		$expected = new DataResponse([], Http::STATUS_FORBIDDEN);
-
-		$this->assertEquals($expected, $res);
-	}
-
-	public function testNoPreview(): void {
-		$userFolder = $this->createMock(Folder::class);
-		$this->rootFolder->method('getUserFolder')
-			->with($this->equalTo($this->userId))
-			->willReturn($userFolder);
-
-		$file = $this->createMock(File::class);
-		$userFolder->method('get')
+		$this->userFolder->method('get')
 			->with($this->equalTo('file'))
 			->willReturn($file);
 
@@ -179,16 +135,112 @@ class PreviewControllerTest extends \Test\TestCase {
 
 		$this->assertEquals($expected, $res);
 	}
+	public function testFileWithoutReadPermission() {
+		$file = $this->createMock(File::class);
+		$this->userFolder->method('get')
+			->with($this->equalTo('file'))
+			->willReturn($file);
 
-	public function testValidPreview(): void {
-		$userFolder = $this->createMock(Folder::class);
-		$this->rootFolder->method('getUserFolder')
-			->with($this->equalTo($this->userId))
-			->willReturn($userFolder);
+		$this->previewManager->method('isAvailable')
+			->with($this->equalTo($file))
+			->willReturn(true);
 
+		$file->method('isReadable')
+			->willReturn(false);
+
+		$res = $this->controller->getPreview('file', 10, 10, true, true);
+		$expected = new DataResponse([], Http::STATUS_FORBIDDEN);
+
+		$this->assertEquals($expected, $res);
+	}
+
+	public function testFileWithoutDownloadPermission() {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(123);
-		$userFolder->method('get')
+		$this->userFolder->method('get')
+			->with($this->equalTo('file'))
+			->willReturn($file);
+
+		$this->previewManager->method('isAvailable')
+			->with($this->equalTo($file))
+			->willReturn(true);
+
+		$share = $this->createMock(IShare::class);
+		$share->method('canSeeContent')
+			->willReturn(false);
+
+		$storage = $this->createMock(ISharedStorage::class);
+		$storage->method('instanceOfStorage')
+			->with(ISharedStorage::class)
+			->willReturn(true);
+		$storage->method('getShare')
+			->willReturn($share);
+
+		$file->method('getStorage')
+			->willReturn($storage);
+		$file->method('isReadable')
+			->willReturn(true);
+
+		$this->request->method('getHeader')->willReturn('');
+
+		$res = $this->controller->getPreview('file', 10, 10, true, true);
+		$expected = new DataResponse([], Http::STATUS_FORBIDDEN);
+
+		$this->assertEquals($expected, $res);
+	}
+
+	public function testFileWithoutDownloadPermissionButHeader() {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(123);
+		$this->userFolder->method('get')
+			->with($this->equalTo('file'))
+			->willReturn($file);
+
+		$this->previewManager->method('isAvailable')
+			->with($this->equalTo($file))
+			->willReturn(true);
+
+		$share = $this->createMock(IShare::class);
+		$share->method('canSeeContent')
+			->willReturn(false);
+
+		$storage = $this->createMock(ISharedStorage::class);
+		$storage->method('instanceOfStorage')
+			->with(ISharedStorage::class)
+			->willReturn(true);
+		$storage->method('getShare')
+			->willReturn($share);
+
+		$file->method('getStorage')
+			->willReturn($storage);
+		$file->method('isReadable')
+			->willReturn(true);
+
+		$this->request
+			->method('getHeader')
+			->with('x-nc-preview')
+			->willReturn('true');
+
+		$preview = $this->createMock(ISimpleFile::class);
+		$preview->method('getName')->willReturn('my name');
+		$preview->method('getMTime')->willReturn(42);
+		$this->previewManager->method('getPreview')
+			->with($this->equalTo($file), 10, 10, false, $this->equalTo('myMode'))
+			->willReturn($preview);
+		$preview->method('getMimeType')
+			->willReturn('myMime');
+
+		$res = $this->controller->getPreview('file', 10, 10, true, true, 'myMode');
+
+		$this->assertEquals('myMime', $res->getHeaders()['Content-Type']);
+		$this->assertEquals(Http::STATUS_OK, $res->getStatus());
+		$this->assertEquals($preview, $this->invokePrivate($res, 'file'));
+	}
+
+	public function testValidPreview(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(123);
+		$this->userFolder->method('get')
 			->with($this->equalTo('file'))
 			->willReturn($file);
 
@@ -202,6 +254,54 @@ class PreviewControllerTest extends \Test\TestCase {
 		$storage = $this->createMock(IStorage::class);
 		$file->method('getStorage')
 			->willReturn($storage);
+
+		$preview = $this->createMock(ISimpleFile::class);
+		$preview->method('getName')->willReturn('my name');
+		$preview->method('getMTime')->willReturn(42);
+		$this->previewManager->method('getPreview')
+			->with($this->equalTo($file), 10, 10, false, $this->equalTo('myMode'))
+			->willReturn($preview);
+		$preview->method('getMimeType')
+			->willReturn('myMime');
+
+		$res = $this->controller->getPreview('file', 10, 10, true, true, 'myMode');
+
+		$this->assertEquals('myMime', $res->getHeaders()['Content-Type']);
+		$this->assertEquals(Http::STATUS_OK, $res->getStatus());
+		$this->assertEquals($preview, $this->invokePrivate($res, 'file'));
+	}
+
+	public function testValidPreviewOfShare() {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(123);
+		$this->userFolder->method('get')
+			->with($this->equalTo('file'))
+			->willReturn($file);
+
+		$this->previewManager->method('isAvailable')
+			->with($this->equalTo($file))
+			->willReturn(true);
+
+		// No attributes set -> download permitted
+		$share = $this->createMock(IShare::class);
+		$share->method('canSeeContent')
+			->willReturn(true);
+
+		$storage = $this->createMock(ISharedStorage::class);
+		$storage->method('instanceOfStorage')
+			->with(ISharedStorage::class)
+			->willReturn(true);
+		$storage->method('getShare')
+			->willReturn($share);
+
+		$file->method('getStorage')
+			->willReturn($storage);
+		$file->method('isReadable')
+			->willReturn(true);
+
+		$this->request
+			->method('getHeader')
+			->willReturn('');
 
 		$preview = $this->createMock(ISimpleFile::class);
 		$preview->method('getName')->willReturn('my name');

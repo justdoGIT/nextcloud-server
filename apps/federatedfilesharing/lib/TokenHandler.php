@@ -1,10 +1,13 @@
 <?php
 
+declare(strict_types=1);
+
 /**
  * SPDX-FileCopyrightText: 2019-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\FederatedFileSharing;
 
 use OCP\Security\ISecureRandom;
@@ -17,16 +20,14 @@ use OCP\Security\ISecureRandom;
 class TokenHandler {
 	public const TOKEN_LENGTH = 15;
 
-	/** @var ISecureRandom */
-	private $secureRandom;
-
 	/**
 	 * TokenHandler constructor.
 	 *
 	 * @param ISecureRandom $secureRandom
 	 */
-	public function __construct(ISecureRandom $secureRandom) {
-		$this->secureRandom = $secureRandom;
+	public function __construct(
+		private ISecureRandom $secureRandom,
+	) {
 	}
 
 	/**

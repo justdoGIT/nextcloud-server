@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2019 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Settings\Settings\Personal\Security;
 
 use Exception;
@@ -24,39 +25,23 @@ use function is_null;
 
 class TwoFactor implements ISettings {
 
-	/** @var ProviderLoader */
-	private $providerLoader;
-
-	/** @var MandatoryTwoFactor */
-	private $mandatoryTwoFactor;
-
-	/** @var IUserSession */
-	private $userSession;
-
-	/** @var string|null */
-	private $uid;
-
-	/** @var IConfig */
-	private $config;
-
-	public function __construct(ProviderLoader $providerLoader,
-		MandatoryTwoFactor $mandatoryTwoFactor,
-		IUserSession $userSession,
-		IConfig $config,
-		?string $UserId) {
-		$this->providerLoader = $providerLoader;
-		$this->mandatoryTwoFactor = $mandatoryTwoFactor;
-		$this->userSession = $userSession;
-		$this->uid = $UserId;
-		$this->config = $config;
+	public function __construct(
+		private ProviderLoader $providerLoader,
+		private MandatoryTwoFactor $mandatoryTwoFactor,
+		private IUserSession $userSession,
+		private IConfig $config,
+		private ?string $userId,
+	) {
 	}
 
+	#[\Override]
 	public function getForm(): TemplateResponse {
 		return new TemplateResponse('settings', 'settings/personal/security/twofactor', [
 			'twoFactorProviderData' => $this->getTwoFactorProviderData(),
 		]);
 	}
 
+	#[\Override]
 	public function getSection(): ?string {
 		if (!$this->shouldShow()) {
 			return null;
@@ -64,6 +49,7 @@ class TwoFactor implements ISettings {
 		return 'security';
 	}
 
+	#[\Override]
 	public function getPriority(): int {
 		return 15;
 	}

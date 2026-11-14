@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2020 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Events;
 
 use OCP\EventDispatcher\Event;
@@ -17,10 +18,6 @@ use OCP\EventDispatcher\Event;
  * @since 20.0.0
  */
 class CalendarPublishedEvent extends Event {
-	private int $calendarId;
-	private array $calendarData;
-	private string $publicUri;
-
 	/**
 	 * CalendarPublishedEvent constructor.
 	 *
@@ -29,13 +26,12 @@ class CalendarPublishedEvent extends Event {
 	 * @param string $publicUri
 	 * @since 20.0.0
 	 */
-	public function __construct(int $calendarId,
-		array $calendarData,
-		string $publicUri) {
+	public function __construct(
+		private int $calendarId,
+		private array $calendarData,
+		private string $publicUri,
+	) {
 		parent::__construct();
-		$this->calendarId = $calendarId;
-		$this->calendarData = $calendarData;
-		$this->publicUri = $publicUri;
 	}
 
 	/**

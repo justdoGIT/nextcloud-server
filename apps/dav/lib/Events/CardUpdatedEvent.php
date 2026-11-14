@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2020 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Events;
 
 use OCP\EventDispatcher\Event;
@@ -18,18 +19,6 @@ use OCP\EventDispatcher\Event;
  */
 class CardUpdatedEvent extends Event {
 
-	/** @var int */
-	private $addressBookId;
-
-	/** @var array */
-	private $addressBookData;
-
-	/** @var array */
-	private $shares;
-
-	/** @var array */
-	private $cardData;
-
 	/**
 	 * CardUpdatedEvent constructor.
 	 *
@@ -39,15 +28,13 @@ class CardUpdatedEvent extends Event {
 	 * @param array $cardData
 	 * @since 20.0.0
 	 */
-	public function __construct(int $addressBookId,
-		array $addressBookData,
-		array $shares,
-		array $cardData) {
+	public function __construct(
+		private int $addressBookId,
+		private array $addressBookData,
+		private array $shares,
+		private array $cardData,
+	) {
 		parent::__construct();
-		$this->addressBookId = $addressBookId;
-		$this->addressBookData = $addressBookData;
-		$this->shares = $shares;
-		$this->cardData = $cardData;
 	}
 
 	/**

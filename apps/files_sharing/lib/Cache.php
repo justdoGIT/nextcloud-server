@@ -1,9 +1,11 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2016-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Files_Sharing;
 
 use OC\Files\Cache\CacheDependencies;
@@ -27,29 +29,22 @@ use OCP\Share\IShare;
  * don't use this class directly if you need to get metadata, use \OC\Files\Filesystem::getFileInfo instead
  */
 class Cache extends CacheJail {
-	/** @var SharedStorage */
-	private $storage;
-	private ICacheEntry $sourceRootInfo;
 	private bool $rootUnchanged = true;
 	private ?string $ownerDisplayName = null;
 	private $numericId;
 	private DisplayNameCache $displayNameCache;
-	private IShare $share;
 
 	/**
 	 * @param SharedStorage $storage
 	 */
 	public function __construct(
-		$storage,
-		ICacheEntry $sourceRootInfo,
+		private $storage,
+		private ICacheEntry $sourceRootInfo,
 		CacheDependencies $dependencies,
-		IShare $share,
+		private IShare $share,
 	) {
-		$this->storage = $storage;
-		$this->sourceRootInfo = $sourceRootInfo;
-		$this->numericId = $sourceRootInfo->getStorageId();
+		$this->numericId = $this->sourceRootInfo->getStorageId();
 		$this->displayNameCache = $dependencies->getDisplayNameCache();
-		$this->share = $share;
 
 		parent::__construct(
 			null,
@@ -58,6 +53,7 @@ class Cache extends CacheJail {
 		);
 	}
 
+	#[\Override]
 	protected function getRoot() {
 		if ($this->root === '') {
 			$absoluteRoot = $this->sourceRootInfo->getPath();
@@ -70,15 +66,17 @@ class Cache extends CacheJail {
 				/** @var Jail $currentStorage */
 				$absoluteRoot = $currentStorage->getJailedPath($absoluteRoot);
 			}
-			$this->root = $absoluteRoot;
+			$this->root = $absoluteRoot ?? '';
 		}
 		return $this->root;
 	}
 
-	protected function getGetUnjailedRoot() {
+	#[\Override]
+	public function getGetUnjailedRoot(): string {
 		return $this->sourceRootInfo->getPath();
 	}
 
+	#[\Override]
 	public function getCache(): ICache {
 		if (is_null($this->cache)) {
 			$sourceStorage = $this->storage->getSourceStorage();
@@ -92,6 +90,7 @@ class Cache extends CacheJail {
 		return $this->cache;
 	}
 
+	#[\Override]
 	public function getNumericStorageId() {
 		if (isset($this->numericId)) {
 			return $this->numericId;
@@ -100,6 +99,7 @@ class Cache extends CacheJail {
 		}
 	}
 
+	#[\Override]
 	public function get($file) {
 		if ($this->rootUnchanged && ($file === '' || $file === $this->sourceRootInfo->getId())) {
 			return $this->formatCacheEntry(clone $this->sourceRootInfo, '');
@@ -107,36 +107,48 @@ class Cache extends CacheJail {
 		return parent::get($file);
 	}
 
+	#[\Override]
 	public function update($id, array $data) {
 		$this->rootUnchanged = false;
 		parent::update($id, $data);
 	}
 
+	#[\Override]
 	public function insert($file, array $data) {
 		$this->rootUnchanged = false;
 		return parent::insert($file, $data);
 	}
 
+	#[\Override]
 	public function remove($file) {
 		$this->rootUnchanged = false;
 		parent::remove($file);
 	}
 
+	#[\Override]
 	public function moveFromCache(ICache $sourceCache, $sourcePath, $targetPath) {
 		$this->rootUnchanged = false;
 		return parent::moveFromCache($sourceCache, $sourcePath, $targetPath);
 	}
 
+	#[\Override]
 	protected function formatCacheEntry($entry, $path = null) {
 		if (is_null($path)) {
 			$path = $entry['path'] ?? '';
-			$entry['path'] = $this->getJailedPath($path);
+			$jailedPath = $this->getJailedPath($path);
+			if ($jailedPath === null) {
+				return false;
+			}
+			$entry['path'] = $jailedPath;
 		} else {
 			$entry['path'] = $path;
 		}
 
 		try {
 			if (isset($entry['permissions'])) {
+				// keep the unmasked permissions so a future scan or cross-storage
+				// copy doesn't persist the share-masked permissions in the cache
+				$entry['scan_permissions'] ??= $entry['permissions'];
 				$entry['permissions'] &= $this->share->getPermissions();
 			} else {
 				$entry['permissions'] = $this->storage->getPermissions($entry['path']);
@@ -169,10 +181,12 @@ class Cache extends CacheJail {
 	/**
 	 * remove all entries for files that are stored on the storage from the cache
 	 */
+	#[\Override]
 	public function clear() {
 		// Not a valid action for Shared Cache
 	}
 
+	#[\Override]
 	public function getQueryFilterForStorage(): ISearchOperator {
 		$storageFilter = \OC\Files\Cache\Cache::getQueryFilterForStorage();
 
@@ -191,11 +205,16 @@ class Cache extends CacheJail {
 		);
 	}
 
+	#[\Override]
 	public function getCacheEntryFromSearchResult(ICacheEntry $rawEntry): ?ICacheEntry {
 		if ($rawEntry->getStorageId() === $this->getNumericStorageId()) {
 			return parent::getCacheEntryFromSearchResult($rawEntry);
 		} else {
 			return null;
 		}
+	}
+
+	public function markRootChanged(): void {
+		$this->rootUnchanged = false;
 	}
 }

@@ -10,6 +10,8 @@ declare(strict_types=1);
 namespace OCA\AdminAudit\Listener;
 
 use OCA\AdminAudit\Actions\Action;
+use OCA\AdminAudit\Operation;
+use OCA\Files_Versions\Events\VersionRestoredEvent;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 use OCP\Files\InvalidPathException;
@@ -19,12 +21,15 @@ use OCP\Server;
 use Psr\Log\LoggerInterface;
 
 /**
- * @template-implements IEventListener<BeforePreviewFetchedEvent>
+ * @template-implements IEventListener<BeforePreviewFetchedEvent|VersionRestoredEvent>
  */
 class FileEventListener extends Action implements IEventListener {
+	#[\Override]
 	public function handle(Event $event): void {
 		if ($event instanceof BeforePreviewFetchedEvent) {
 			$this->beforePreviewFetched($event);
+		} elseif ($event instanceof VersionRestoredEvent) {
+			$this->versionRestored($event);
 		}
 	}
 
@@ -40,10 +45,12 @@ class FileEventListener extends Action implements IEventListener {
 				'height' => $event->getHeight(),
 				'crop' => $event->isCrop(),
 				'mode' => $event->getMode(),
-				'path' => mb_substr($file->getInternalPath(), 5)
-			];
+				'path' => $file->getPath(),
+			] + $this->getRealPathParam('realPath', $file)
+				+ $this->getOwnerPathParam('ownerPath', $file);
 			$this->log(
-				'Preview accessed: (id: "%s", width: "%s", height: "%s" crop: "%s", mode: "%s", path: "%s")',
+				Operation::PreviewAccessed,
+				$this->appendRealPathText('Preview accessed: (id: "%s", width: "%s", height: "%s" crop: "%s", mode: "%s", path: "%s")', $params),
 				$params,
 				array_keys($params)
 			);
@@ -53,5 +60,19 @@ class FileEventListener extends Action implements IEventListener {
 			);
 			return;
 		}
+	}
+
+	/**
+	 * Logs when a version is restored
+	 */
+	private function versionRestored(VersionRestoredEvent $event): void {
+		$version = $event->getVersion();
+		$this->log(Operation::VersionRestored, 'Version "%s" of "%s" was restored.',
+			[
+				'version' => $version->getRevisionId(),
+				'path' => $version->getVersionPath()
+			],
+			['version', 'path']
+		);
 	}
 }

@@ -1,4 +1,5 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2016-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
@@ -7,54 +8,48 @@
 
 namespace Tests\Core\Command\User;
 
+use InvalidArgumentException;
 use OC\Core\Command\User\Setting;
+use OCP\Config\BeforePreferenceDeletedEvent;
+use OCP\Config\BeforePreferenceSetEvent;
+use OCP\EventDispatcher\IEventDispatcher;
 use OCP\IConfig;
 use OCP\IDBConnection;
 use OCP\IUserManager;
+use PHPUnit\Framework\MockObject\MockObject;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Test\TestCase;
 
 class SettingTest extends TestCase {
-	/** @var \OCP\IUserManager|\PHPUnit\Framework\MockObject\MockObject */
-	protected $userManager;
-	/** @var \OCP\IConfig|\PHPUnit\Framework\MockObject\MockObject */
-	protected $config;
-	/** @var \OCP\IDBConnection|\PHPUnit\Framework\MockObject\MockObject */
-	protected $connection;
-	/** @var \Symfony\Component\Console\Input\InputInterface|\PHPUnit\Framework\MockObject\MockObject */
-	protected $consoleInput;
-	/** @var \Symfony\Component\Console\Output\OutputInterface|\PHPUnit\Framework\MockObject\MockObject */
-	protected $consoleOutput;
+	protected IUserManager&MockObject $userManager;
+	protected IConfig&MockObject $config;
+	protected IDBConnection&MockObject $connection;
+	protected IEventDispatcher&MockObject $eventDispatcher;
+	protected InputInterface&MockObject $consoleInput;
+	protected MockObject&OutputInterface $consoleOutput;
 
+	#[\Override]
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->userManager = $this->getMockBuilder(IUserManager::class)
-			->disableOriginalConstructor()
-			->getMock();
-		$this->config = $this->getMockBuilder(IConfig::class)
-			->disableOriginalConstructor()
-			->getMock();
-		$this->connection = $this->getMockBuilder(IDBConnection::class)
-			->disableOriginalConstructor()
-			->getMock();
-		$this->consoleInput = $this->getMockBuilder(InputInterface::class)
-			->disableOriginalConstructor()
-			->getMock();
-		$this->consoleOutput = $this->getMockBuilder(OutputInterface::class)
-			->disableOriginalConstructor()
-			->getMock();
+		$this->userManager = $this->createMock(IUserManager::class);
+		$this->config = $this->createMock(IConfig::class);
+		$this->connection = $this->createMock(IDBConnection::class);
+		$this->eventDispatcher = $this->createMock(IEventDispatcher::class);
+		$this->consoleInput = $this->createMock(InputInterface::class);
+		$this->consoleOutput = $this->createMock(OutputInterface::class);
 	}
 
 	public function getCommand(array $methods = []) {
 		if (empty($methods)) {
-			return new Setting($this->userManager, $this->config);
+			return new Setting($this->userManager, $this->config, $this->eventDispatcher);
 		} else {
 			$mock = $this->getMockBuilder(Setting::class)
 				->setConstructorArgs([
 					$this->userManager,
 					$this->config,
+					$this->eventDispatcher,
 				])
 				->onlyMethods($methods)
 				->getMock();
@@ -62,7 +57,7 @@ class SettingTest extends TestCase {
 		}
 	}
 
-	public function dataCheckInput() {
+	public static function dataCheckInput(): array {
 		return [
 			[
 				[['uid', 'username']],
@@ -172,11 +167,31 @@ class SettingTest extends TestCase {
 				false,
 				'The "error-if-not-exists" option can only be used together with "delete".',
 			],
+			[
+				[['uid', 'username'], ['key', 'configkey'], ['value', '']],
+				[['ignore-missing-user', true], ['force', true]],
+				[],
+				false,
+				false,
+			],
+			[
+				[['uid', 'username'], ['key', 'configkey']],
+				[['ignore-missing-user', true], ['delete', true], ['force', true]],
+				[],
+				false,
+				false,
+			],
+			[
+				[['uid', 'username'], ['key', 'configkey'], ['value', null]],
+				[['ignore-missing-user', true], ['force', true]],
+				[],
+				false,
+				'The "force" option can only be used together with "value" or "delete".',
+			],
 		];
 	}
 
 	/**
-	 * @dataProvider dataCheckInput
 	 *
 	 * @param array $arguments
 	 * @param array $options
@@ -184,6 +199,7 @@ class SettingTest extends TestCase {
 	 * @param mixed $user
 	 * @param string $expectedException
 	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('dataCheckInput')]
 	public function testCheckInput($arguments, $options, $parameterOptions, $user, $expectedException): void {
 		$this->consoleInput->expects($this->any())
 			->method('getArgument')
@@ -217,7 +233,7 @@ class SettingTest extends TestCase {
 		try {
 			$this->invokePrivate($command, 'checkInput', [$this->consoleInput]);
 			$this->assertFalse($expectedException);
-		} catch (\InvalidArgumentException $e) {
+		} catch (InvalidArgumentException $e) {
 			$this->assertEquals($expectedException, $e->getMessage());
 		}
 	}
@@ -226,7 +242,7 @@ class SettingTest extends TestCase {
 		$command = $this->getCommand(['checkInput']);
 		$command->expects($this->once())
 			->method('checkInput')
-			->willThrowException(new \InvalidArgumentException('test'));
+			->willThrowException(new InvalidArgumentException('test'));
 
 		$this->consoleOutput->expects($this->once())
 			->method('writeln')
@@ -235,7 +251,7 @@ class SettingTest extends TestCase {
 		$this->assertEquals(1, $this->invokePrivate($command, 'execute', [$this->consoleInput, $this->consoleOutput]));
 	}
 
-	public function dataExecuteDelete() {
+	public static function dataExecuteDelete(): array {
 		return [
 			['config', false, null, 0],
 			['config', true, null, 0],
@@ -245,13 +261,13 @@ class SettingTest extends TestCase {
 	}
 
 	/**
-	 * @dataProvider dataExecuteDelete
 	 *
 	 * @param string|null $value
 	 * @param bool $errorIfNotExists
 	 * @param string $expectedLine
 	 * @param int $expectedReturn
 	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('dataExecuteDelete')]
 	public function testExecuteDelete($value, $errorIfNotExists, $expectedLine, $expectedReturn): void {
 		$command = $this->getCommand([
 			'writeArrayInOutputFormat',
@@ -299,7 +315,7 @@ class SettingTest extends TestCase {
 		$this->assertEquals($expectedReturn, $this->invokePrivate($command, 'execute', [$this->consoleInput, $this->consoleOutput]));
 	}
 
-	public function dataExecuteSet() {
+	public static function dataExecuteSet(): array {
 		return [
 			['config', false, null, 0],
 			['config', true, null, 0],
@@ -309,13 +325,13 @@ class SettingTest extends TestCase {
 	}
 
 	/**
-	 * @dataProvider dataExecuteSet
 	 *
 	 * @param string|null $value
 	 * @param bool $updateOnly
 	 * @param string $expectedLine
 	 * @param int $expectedReturn
 	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('dataExecuteSet')]
 	public function testExecuteSet($value, $updateOnly, $expectedLine, $expectedReturn): void {
 		$command = $this->getCommand([
 			'writeArrayInOutputFormat',
@@ -367,7 +383,120 @@ class SettingTest extends TestCase {
 		$this->assertEquals($expectedReturn, $this->invokePrivate($command, 'execute', [$this->consoleInput, $this->consoleOutput]));
 	}
 
-	public function dataExecuteGet() {
+	public function testExecuteSetRejected(): void {
+		$command = $this->getCommand(['checkInput']);
+
+		$this->consoleInput->method('getArgument')
+			->willReturnMap([
+				['uid', 'username'],
+				['app', 'appname'],
+				['key', 'configkey'],
+				['value', 'setValue'],
+			]);
+		$this->consoleInput->method('hasParameterOption')
+			->willReturnMap([
+				['--update-only', false, false],
+				['--force', false, false],
+			]);
+		$this->eventDispatcher->expects($this->once())
+			->method('dispatchTyped')
+			->willReturnCallback(function (BeforePreferenceSetEvent $event): void {
+				$this->assertSame('username', $event->getUserId());
+				$this->assertSame('appname', $event->getAppId());
+				$this->assertSame('configkey', $event->getConfigKey());
+				$this->assertSame('setValue', $event->getConfigValue());
+				$event->setValid(false);
+			});
+		$this->config->expects($this->never())
+			->method('setUserValue');
+
+		$this->assertEquals(1, $this->invokePrivate($command, 'execute', [$this->consoleInput, $this->consoleOutput]));
+	}
+
+	public function testExecuteDeleteRejected(): void {
+		$command = $this->getCommand(['checkInput']);
+
+		$this->consoleInput->method('getArgument')
+			->willReturnMap([
+				['uid', 'username'],
+				['app', 'appname'],
+				['key', 'configkey'],
+			]);
+		$this->consoleInput->method('hasParameterOption')
+			->willReturnMap([
+				['--delete', false, true],
+				['--error-if-not-exists', false, false],
+				['--force', false, false],
+			]);
+		$this->eventDispatcher->expects($this->once())
+			->method('dispatchTyped')
+			->willReturnCallback(function (BeforePreferenceDeletedEvent $event): void {
+				$this->assertSame('username', $event->getUserId());
+				$this->assertSame('appname', $event->getAppId());
+				$this->assertSame('configkey', $event->getConfigKey());
+				$event->setValid(false);
+			});
+		$this->config->expects($this->never())
+			->method('deleteUserValue');
+
+		$this->assertEquals(1, $this->invokePrivate($command, 'execute', [$this->consoleInput, $this->consoleOutput]));
+	}
+
+	public function testExecuteSetRejectedForced(): void {
+		$command = $this->getCommand(['checkInput']);
+
+		$this->consoleInput->method('getArgument')
+			->willReturnMap([
+				['uid', 'username'],
+				['app', 'appname'],
+				['key', 'configkey'],
+				['value', 'setValue'],
+			]);
+		$this->consoleInput->method('hasParameterOption')
+			->willReturnMap([
+				['--update-only', false, false],
+				['--force', false, true],
+			]);
+		$this->eventDispatcher->expects($this->once())
+			->method('dispatchTyped')
+			->willReturnCallback(function (BeforePreferenceSetEvent $event): void {
+				$event->setValid(false);
+			});
+		$this->config->expects($this->once())
+			->method('setUserValue')
+			->with('username', 'appname', 'configkey', 'setValue');
+
+		$this->assertEquals(0, $this->invokePrivate($command, 'execute', [$this->consoleInput, $this->consoleOutput]));
+	}
+
+	public function testExecuteDeleteRejectedForced(): void {
+		$command = $this->getCommand(['checkInput']);
+
+		$this->consoleInput->method('getArgument')
+			->willReturnMap([
+				['uid', 'username'],
+				['app', 'appname'],
+				['key', 'configkey'],
+			]);
+		$this->consoleInput->method('hasParameterOption')
+			->willReturnMap([
+				['--delete', false, true],
+				['--error-if-not-exists', false, false],
+				['--force', false, true],
+			]);
+		$this->eventDispatcher->expects($this->once())
+			->method('dispatchTyped')
+			->willReturnCallback(function (BeforePreferenceDeletedEvent $event): void {
+				$event->setValid(false);
+			});
+		$this->config->expects($this->once())
+			->method('deleteUserValue')
+			->with('username', 'appname', 'configkey');
+
+		$this->assertEquals(0, $this->invokePrivate($command, 'execute', [$this->consoleInput, $this->consoleOutput]));
+	}
+
+	public static function dataExecuteGet(): array {
 		return [
 			['config', null, 'config', 0],
 			[null, 'config', 'config', 0],
@@ -376,13 +505,13 @@ class SettingTest extends TestCase {
 	}
 
 	/**
-	 * @dataProvider dataExecuteGet
 	 *
 	 * @param string|null $value
 	 * @param string|null $defaultValue
 	 * @param string $expectedLine
 	 * @param int $expectedReturn
 	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('dataExecuteGet')]
 	public function testExecuteGet($value, $defaultValue, $expectedLine, $expectedReturn): void {
 		$command = $this->getCommand([
 			'writeArrayInOutputFormat',
@@ -457,7 +586,6 @@ class SettingTest extends TestCase {
 		$command->expects($this->once())
 			->method('writeArrayInOutputFormat')
 			->with($this->consoleInput, $this->consoleOutput, ['settings']);
-
 
 		$this->assertEquals(0, $this->invokePrivate($command, 'execute', [$this->consoleInput, $this->consoleOutput]));
 	}

@@ -1,9 +1,11 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2016-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Files_External\Tests\Service;
 
 use OC\User\User;
@@ -15,28 +17,17 @@ use OCP\EventDispatcher\IEventDispatcher;
 use OCP\IGroupManager;
 use OCP\IUser;
 use OCP\IUserSession;
+use OCP\Server;
+use PHPUnit\Framework\MockObject\MockObject;
 use Test\Traits\UserTrait;
 
-/**
- * @group DB
- */
+#[\PHPUnit\Framework\Attributes\Group(name: 'DB')]
 class UserGlobalStoragesServiceTest extends GlobalStoragesServiceTest {
 	use UserTrait;
 
-	/** @var \OCP\IGroupManager|\PHPUnit\Framework\MockObject\MockObject groupManager */
-	protected $groupManager;
-
-	/**
-	 * @var StoragesService
-	 */
-	protected $globalStoragesService;
-
-	/**
-	 * @var UserGlobalStoragesService
-	 */
-	protected $service;
-
-	protected $user;
+	protected IGroupManager&MockObject $groupManager;
+	protected StoragesService $globalStoragesService;
+	protected User $user;
 
 	public const USER_ID = 'test_user';
 	public const GROUP_ID = 'test_group';
@@ -47,8 +38,8 @@ class UserGlobalStoragesServiceTest extends GlobalStoragesServiceTest {
 
 		$this->globalStoragesService = $this->service;
 
-		$this->user = new User(self::USER_ID, null, \OC::$server->get(IEventDispatcher::class));
-		/** @var \OCP\IUserSession|\PHPUnit\Framework\MockObject\MockObject $userSession */
+		$this->user = new User(self::USER_ID, null, Server::get(IEventDispatcher::class));
+		/** @var IUserSession&MockObject $userSession */
 		$userSession = $this->createMock(IUserSession::class);
 		$userSession
 			->expects($this->any())
@@ -81,12 +72,12 @@ class UserGlobalStoragesServiceTest extends GlobalStoragesServiceTest {
 			$this->dbConfig,
 			$userSession,
 			$this->groupManager,
-			$this->mountCache,
 			$this->eventDispatcher,
+			$this->appConfig,
 		);
 	}
 
-	public function applicableStorageProvider() {
+	public static function applicableStorageProvider(): array {
 		return [
 			[[], [], true],
 
@@ -106,9 +97,7 @@ class UserGlobalStoragesServiceTest extends GlobalStoragesServiceTest {
 		];
 	}
 
-	/**
-	 * @dataProvider applicableStorageProvider
-	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider(methodName: 'applicableStorageProvider')]
 	public function testGetStorageWithApplicable($applicableUsers, $applicableGroups, $isVisible): void {
 		$backend = $this->backendService->getBackend('identifier:\OCA\Files_External\Lib\Backend\SMB');
 		$authMechanism = $this->backendService->getAuthMechanism('identifier:\Auth\Mechanism');
@@ -120,6 +109,7 @@ class UserGlobalStoragesServiceTest extends GlobalStoragesServiceTest {
 		$storage->setBackendOptions(['password' => 'testPassword']);
 		$storage->setApplicableUsers($applicableUsers);
 		$storage->setApplicableGroups($applicableGroups);
+		$storage->setPriority(0);
 
 		$newStorage = $this->globalStoragesService->addStorage($storage);
 
@@ -139,7 +129,6 @@ class UserGlobalStoragesServiceTest extends GlobalStoragesServiceTest {
 		}
 	}
 
-
 	public function testAddStorage($storageParams = null): void {
 		$this->expectException(\DomainException::class);
 
@@ -154,7 +143,6 @@ class UserGlobalStoragesServiceTest extends GlobalStoragesServiceTest {
 
 		$this->service->addStorage($storage);
 	}
-
 
 	public function testUpdateStorage($storageParams = null): void {
 		$this->expectException(\DomainException::class);
@@ -175,16 +163,13 @@ class UserGlobalStoragesServiceTest extends GlobalStoragesServiceTest {
 		$this->service->updateStorage($retrievedStorage);
 	}
 
-
 	public function testNonExistingStorage(): void {
 		$this->expectException(\DomainException::class);
 
 		$this->ActualNonExistingStorageTest();
 	}
 
-	/**
-	 * @dataProvider deleteStorageDataProvider
-	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider(methodName: 'deleteStorageDataProvider')]
 	public function testDeleteStorage($backendOptions, $rustyStorageId): void {
 		$this->expectException(\DomainException::class);
 
@@ -203,14 +188,13 @@ class UserGlobalStoragesServiceTest extends GlobalStoragesServiceTest {
 		$this->service->removeStorage($id);
 	}
 
-
 	public function testDeleteUnexistingStorage(): void {
 		$this->expectException(\DomainException::class);
 
 		$this->actualDeletedUnexistingStorageTest();
 	}
 
-	public function getUniqueStoragesProvider() {
+	public static function getUniqueStoragesProvider(): array {
 		return [
 			// 'all' vs group
 			[100, [], [], 100, [], [self::GROUP_ID], 2],
@@ -238,9 +222,7 @@ class UserGlobalStoragesServiceTest extends GlobalStoragesServiceTest {
 		];
 	}
 
-	/**
-	 * @dataProvider getUniqueStoragesProvider
-	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider(methodName: 'getUniqueStoragesProvider')]
 	public function testGetUniqueStorages(
 		$priority1, $applicableUsers1, $applicableGroups1,
 		$priority2, $applicableUsers2, $applicableGroups2,
@@ -295,22 +277,22 @@ class UserGlobalStoragesServiceTest extends GlobalStoragesServiceTest {
 		$this->addToAssertionCount(1);
 	}
 
-	public function testHooksAddStorage($a = null, $b = null, $c = null): void {
+	public function testEventsAddStorage(): void {
 		// we don't test this here
 		$this->addToAssertionCount(1);
 	}
 
-	public function testHooksUpdateStorage($a = null, $b = null, $c = null, $d = null, $e = null): void {
+	public function testEventsUpdateStorage(): void {
 		// we don't test this here
 		$this->addToAssertionCount(1);
 	}
 
-	public function testHooksRenameMountPoint(): void {
+	public function testEventsRenameMountPoint(): void {
 		// we don't test this here
 		$this->addToAssertionCount(1);
 	}
 
-	public function testHooksDeleteStorage($a = null, $b = null, $c = null): void {
+	public function testEventsDeleteStorage(): void {
 		// we don't test this here
 		$this->addToAssertionCount(1);
 	}
@@ -346,6 +328,11 @@ class UserGlobalStoragesServiceTest extends GlobalStoragesServiceTest {
 	}
 
 	public function testUpdateStorageMountPoint(): void {
+		// we don't test this here
+		$this->addToAssertionCount(1);
+	}
+
+	public function testAuditEvents(): void {
 		// we don't test this here
 		$this->addToAssertionCount(1);
 	}

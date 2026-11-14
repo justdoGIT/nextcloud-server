@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2020 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\UserStatus\Listener;
 
 use OCA\UserStatus\Service\StatusService;
@@ -21,22 +22,20 @@ use OCP\User\Events\UserDeletedEvent;
  */
 class UserDeletedListener implements IEventListener {
 
-	/** @var StatusService */
-	private $service;
-
 	/**
 	 * UserDeletedListener constructor.
 	 *
 	 * @param StatusService $service
 	 */
-	public function __construct(StatusService $service) {
-		$this->service = $service;
+	public function __construct(
+		private StatusService $service,
+	) {
 	}
-
 
 	/**
 	 * @inheritDoc
 	 */
+	#[\Override]
 	public function handle(Event $event): void {
 		if (!($event instanceof UserDeletedEvent)) {
 			// Unrelated
@@ -45,5 +44,6 @@ class UserDeletedListener implements IEventListener {
 
 		$user = $event->getUser();
 		$this->service->removeUserStatus($user->getUID());
+		$this->service->removeBackupUserStatus($user->getUID());
 	}
 }

@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OC\Migration;
 
 use OC\DB\Connection;
@@ -73,7 +74,7 @@ class MetadataManager {
 	): array {
 		$appsAttributes = [];
 		foreach (array_keys($metadata['apps']) as $appId) {
-			if ($filterKnownMigrations && !$this->appManager->isInstalled($appId)) {
+			if ($filterKnownMigrations && !$this->appManager->isEnabledForAnyone($appId)) {
 				continue; // if not interested and app is not installed
 			}
 
@@ -97,7 +98,7 @@ class MetadataManager {
 	 * @since 30.0.0
 	 */
 	public function getUnsupportedApps(array $metadata): array {
-		return array_values(array_diff($this->appManager->getInstalledApps(), array_keys($metadata['apps'])));
+		return array_values(array_diff($this->appManager->getEnabledApps(), array_keys($metadata['apps'])));
 	}
 
 	/**
@@ -111,6 +112,8 @@ class MetadataManager {
 	private function parseMigrations(array $migrations, array $ignoreMigrations = []): array {
 		$parsed = [];
 		foreach (array_keys($migrations) as $entry) {
+			// $entry may be an int since json_decode() casts numeric-looking migration version keys to integers
+			/** @psalm-suppress UnrecognizedExpression */
 			if (in_array($entry, $ignoreMigrations)) {
 				continue;
 			}

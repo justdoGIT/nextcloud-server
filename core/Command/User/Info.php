@@ -1,14 +1,20 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OC\Core\Command\User;
 
 use OC\Core\Command\Base;
+use OC\User\NoUserException;
+use OCP\Files\IRootFolder;
+use OCP\Files\ISetupManager;
 use OCP\IGroupManager;
 use OCP\IUser;
 use OCP\IUserManager;
+use OCP\Server;
 use Stecman\Component\Symfony\Console\BashCompletion\CompletionContext;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
@@ -19,11 +25,13 @@ class Info extends Base {
 	public function __construct(
 		protected IUserManager $userManager,
 		protected IGroupManager $groupManager,
+		protected ISetupManager $setupManager,
 	) {
 		parent::__construct();
 	}
 
-	protected function configure() {
+	#[\Override]
+	protected function configure(): void {
 		$this
 			->setName('user:info')
 			->setDescription('show user info')
@@ -40,6 +48,7 @@ class Info extends Base {
 			);
 	}
 
+	#[\Override]
 	protected function execute(InputInterface $input, OutputInterface $output): int {
 		$user = $this->userManager->get($input->getArgument('user'));
 		if (is_null($user)) {
@@ -56,7 +65,8 @@ class Info extends Base {
 			'groups' => $groups,
 			'quota' => $user->getQuota(),
 			'storage' => $this->getStorageInfo($user),
-			'last_seen' => date(\DateTimeInterface::ATOM, $user->getLastLogin()), // ISO-8601
+			'first_seen' => $this->formatLoginDate($user->getFirstLogin()),
+			'last_seen' => $this->formatLoginDate($user->getLastLogin()),
 			'user_directory' => $user->getHome(),
 			'backend' => $user->getBackendClassName()
 		];
@@ -64,25 +74,28 @@ class Info extends Base {
 		return 0;
 	}
 
+	private function formatLoginDate(int $timestamp): string {
+		if ($timestamp < 0) {
+			return 'unknown';
+		} elseif ($timestamp === 0) {
+			return 'never';
+		} else {
+			return date(\DateTimeInterface::ATOM, $timestamp); // ISO-8601
+		}
+	}
+
 	/**
 	 * @param IUser $user
 	 * @return array
 	 */
 	protected function getStorageInfo(IUser $user): array {
-		\OC_Util::tearDownFS();
-		\OC_Util::setupFS($user->getUID());
+		$root = Server::get(IRootFolder::class);
 		try {
-			$storage = \OC_Helper::getStorageInfo('/');
-		} catch (\OCP\Files\NotFoundException $e) {
+			$userFolder = $root->getUserFolder($user->getUID());
+			return $userFolder->getUserQuota();
+		} catch (NoUserException) {
 			return [];
 		}
-		return [
-			'free' => $storage['free'],
-			'used' => $storage['used'],
-			'total' => $storage['total'],
-			'relative' => $storage['relative'],
-			'quota' => $storage['quota'],
-		];
 	}
 
 	/**
@@ -90,9 +103,10 @@ class Info extends Base {
 	 * @param CompletionContext $context
 	 * @return string[]
 	 */
+	#[\Override]
 	public function completeArgumentValues($argumentName, CompletionContext $context) {
 		if ($argumentName === 'user') {
-			return array_map(static fn (IUser $user) => $user->getUID(), $this->userManager->search($context->getCurrentWord()));
+			return array_map(static fn (IUser $user) => $user->getUID(), $this->userManager->searchDisplayName($context->getCurrentWord()));
 		}
 		return [];
 	}

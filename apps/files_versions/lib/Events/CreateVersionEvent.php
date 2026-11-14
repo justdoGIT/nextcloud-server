@@ -1,8 +1,10 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2017 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Files_Versions\Events;
 
 use OCP\EventDispatcher\Event;
@@ -17,21 +19,18 @@ use OCP\Files\Node;
  */
 class CreateVersionEvent extends Event {
 
-
 	/** @var bool */
 	private $createVersion;
-
-	/** @var Node */
-	private $node;
 
 	/**
 	 * CreateVersionEvent constructor.
 	 *
 	 * @param Node $node
 	 */
-	public function __construct(Node $node) {
+	public function __construct(
+		private Node $node,
+	) {
 		$this->createVersion = true;
-		$this->node = $node;
 	}
 
 	/**

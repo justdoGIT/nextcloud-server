@@ -1,39 +1,45 @@
 <?php
+
+declare(strict_types=1);
+
 /**
  * SPDX-FileCopyrightText: 2017 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\ShareByMail\Settings;
 
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\AppFramework\Services\IInitialState;
 use OCP\IL10N;
 use OCP\Settings\IDelegatedSettings;
+use OCP\Util;
 
 class Admin implements IDelegatedSettings {
-	private SettingsManager $settingsManager;
-	private IL10N $l;
-	private IInitialState $initialState;
-
-	public function __construct(SettingsManager $settingsManager, IL10N $l, IInitialState $initialState) {
-		$this->settingsManager = $settingsManager;
-		$this->l = $l;
-		$this->initialState = $initialState;
+	public function __construct(
+		private SettingsManager $settingsManager,
+		private IL10N $l,
+		private IInitialState $initialState,
+	) {
 	}
 
 	/**
 	 * @return TemplateResponse
 	 */
+	#[\Override]
 	public function getForm() {
 		$this->initialState->provideInitialState('sendPasswordMail', $this->settingsManager->sendPasswordByMail());
 		$this->initialState->provideInitialState('replyToInitiator', $this->settingsManager->replyToInitiator());
 
+		Util::addStyle('sharebymail', 'admin-settings');
+		Util::addScript('sharebymail', 'admin-settings');
 		return new TemplateResponse('sharebymail', 'settings-admin', [], '');
 	}
 
 	/**
 	 * @return string the section ID, e.g. 'sharing'
 	 */
+	#[\Override]
 	public function getSection() {
 		return 'sharing';
 	}
@@ -45,17 +51,23 @@ class Admin implements IDelegatedSettings {
 	 *
 	 * E.g.: 70
 	 */
+	#[\Override]
 	public function getPriority() {
 		return 40;
 	}
 
+	#[\Override]
 	public function getName(): ?string {
 		return $this->l->t('Share by mail');
 	}
 
+	#[\Override]
 	public function getAuthorizedAppConfig(): array {
 		return [
-			'sharebymail' => ['s/(sendpasswordmail|replyToInitiator)/'],
+			'sharebymail' => [
+				'sendpasswordmail',
+				'replyToInitiator',
+			],
 		];
 	}
 }

@@ -9,24 +9,24 @@ declare(strict_types=1);
 
 namespace OCA\AdminAudit\AppInfo;
 
-use OCA\AdminAudit\Actions\Auth;
-use OCA\AdminAudit\Actions\Console;
 use OCA\AdminAudit\Actions\Files;
 use OCA\AdminAudit\Actions\Sharing;
-use OCA\AdminAudit\Actions\TagManagement;
 use OCA\AdminAudit\Actions\Trashbin;
 use OCA\AdminAudit\Actions\Versions;
 use OCA\AdminAudit\AuditLogger;
 use OCA\AdminAudit\IAuditLogger;
 use OCA\AdminAudit\Listener\AppManagementEventListener;
 use OCA\AdminAudit\Listener\AuthEventListener;
+use OCA\AdminAudit\Listener\CacheEventListener;
 use OCA\AdminAudit\Listener\ConsoleEventListener;
 use OCA\AdminAudit\Listener\CriticalActionPerformedEventListener;
 use OCA\AdminAudit\Listener\FileEventListener;
 use OCA\AdminAudit\Listener\GroupManagementEventListener;
 use OCA\AdminAudit\Listener\SecurityEventListener;
 use OCA\AdminAudit\Listener\SharingEventListener;
+use OCA\AdminAudit\Listener\TagEventListener;
 use OCA\AdminAudit\Listener\UserManagementEventListener;
+use OCA\Files_Versions\Events\VersionRestoredEvent;
 use OCP\App\Events\AppDisableEvent;
 use OCP\App\Events\AppEnableEvent;
 use OCP\App\Events\AppUpdateEvent;
@@ -34,29 +34,40 @@ use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
 use OCP\AppFramework\Bootstrap\IRegistrationContext;
+use OCP\Authentication\Events\AnyLoginFailedEvent;
 use OCP\Authentication\TwoFactorAuth\TwoFactorProviderChallengeFailed;
 use OCP\Authentication\TwoFactorAuth\TwoFactorProviderChallengePassed;
+use OCP\Authentication\TwoFactorAuth\TwoFactorProviderForUserRegistered;
+use OCP\Authentication\TwoFactorAuth\TwoFactorProviderForUserUnregistered;
 use OCP\Console\ConsoleEvent;
 use OCP\EventDispatcher\IEventDispatcher;
+use OCP\Files\Cache\CacheEntryInsertedEvent;
+use OCP\Files\Cache\CacheEntryRemovedEvent;
 use OCP\Files\Events\Node\BeforeNodeDeletedEvent;
 use OCP\Files\Events\Node\BeforeNodeReadEvent;
-use OCP\Files\Events\Node\BeforeNodeRenamedEvent;
 use OCP\Files\Events\Node\NodeCopiedEvent;
 use OCP\Files\Events\Node\NodeCreatedEvent;
 use OCP\Files\Events\Node\NodeRenamedEvent;
 use OCP\Files\Events\Node\NodeWrittenEvent;
+use OCP\Group\Events\GroupChangedEvent;
 use OCP\Group\Events\GroupCreatedEvent;
 use OCP\Group\Events\GroupDeletedEvent;
+use OCP\Group\Events\SubAdminAddedEvent;
+use OCP\Group\Events\SubAdminRemovedEvent;
 use OCP\Group\Events\UserAddedEvent;
 use OCP\Group\Events\UserRemovedEvent;
-use OCP\IConfig;
 use OCP\Log\Audit\CriticalActionPerformedEvent;
-use OCP\Log\ILogFactory;
 use OCP\Preview\BeforePreviewFetchedEvent;
 use OCP\Share;
+use OCP\Share\Events\ShareAcceptedEvent;
 use OCP\Share\Events\ShareCreatedEvent;
 use OCP\Share\Events\ShareDeletedEvent;
-use OCP\SystemTag\ManagerEvent;
+use OCP\Share\Events\ShareDeletedFromSelfEvent;
+use OCP\SystemTag\Events\TagCreatedEvent;
+use OCP\SystemTag\Events\TagDeletedEvent;
+use OCP\SystemTag\Events\TagUpdatedEvent;
+use OCP\SystemTag\TagAssignedEvent;
+use OCP\SystemTag\TagUnassignedEvent;
 use OCP\User\Events\BeforeUserLoggedInEvent;
 use OCP\User\Events\BeforeUserLoggedOutEvent;
 use OCP\User\Events\PasswordUpdatedEvent;
@@ -75,10 +86,9 @@ class Application extends App implements IBootstrap {
 		parent::__construct('admin_audit');
 	}
 
+	#[\Override]
 	public function register(IRegistrationContext $context): void {
-		$context->registerService(IAuditLogger::class, function (ContainerInterface $c) {
-			return new AuditLogger($c->get(ILogFactory::class), $c->get(IConfig::class));
-		});
+		$context->registerServiceAlias(IAuditLogger::class, AuditLogger::class);
 
 		$context->registerEventListener(CriticalActionPerformedEvent::class, CriticalActionPerformedEventListener::class);
 
@@ -105,9 +115,11 @@ class Application extends App implements IBootstrap {
 		$context->registerEventListener(UserLoggedInWithCookieEvent::class, AuthEventListener::class);
 		$context->registerEventListener(UserLoggedInEvent::class, AuthEventListener::class);
 		$context->registerEventListener(BeforeUserLoggedOutEvent::class, AuthEventListener::class);
+		$context->registerEventListener(AnyLoginFailedEvent::class, AuthEventListener::class);
 
 		// File events
 		$context->registerEventListener(BeforePreviewFetchedEvent::class, FileEventListener::class);
+		$context->registerEventListener(VersionRestoredEvent::class, FileEventListener::class);
 
 		// Security events
 		$context->registerEventListener(TwoFactorProviderChallengePassed::class, SecurityEventListener::class);
@@ -120,8 +132,33 @@ class Application extends App implements IBootstrap {
 
 		// Console events
 		$context->registerEventListener(ConsoleEvent::class, ConsoleEventListener::class);
+
+		// Cache events
+		$context->registerEventListener(CacheEntryInsertedEvent::class, CacheEventListener::class);
+		$context->registerEventListener(CacheEntryRemovedEvent::class, CacheEventListener::class);
+
+		// System tag event
+		$context->registerEventListener(TagCreatedEvent::class, TagEventListener::class);
+
+		// Users, groups and two-factor providers
+		$context->registerEventListener(GroupChangedEvent::class, GroupManagementEventListener::class);
+		$context->registerEventListener(SubAdminAddedEvent::class, GroupManagementEventListener::class);
+		$context->registerEventListener(SubAdminRemovedEvent::class, GroupManagementEventListener::class);
+		$context->registerEventListener(TwoFactorProviderForUserRegistered::class, SecurityEventListener::class);
+		$context->registerEventListener(TwoFactorProviderForUserUnregistered::class, SecurityEventListener::class);
+
+		// System tags
+		$context->registerEventListener(TagUpdatedEvent::class, TagEventListener::class);
+		$context->registerEventListener(TagDeletedEvent::class, TagEventListener::class);
+		$context->registerEventListener(TagAssignedEvent::class, TagEventListener::class);
+		$context->registerEventListener(TagUnassignedEvent::class, TagEventListener::class);
+
+		// Files sharing recipient events
+		$context->registerEventListener(ShareAcceptedEvent::class, SharingEventListener::class);
+		$context->registerEventListener(ShareDeletedFromSelfEvent::class, SharingEventListener::class);
 	}
 
+	#[\Override]
 	public function boot(IBootContext $context): void {
 		/** @var IAuditLogger $logger */
 		$logger = $context->getAppContainer()->get(IAuditLogger::class);
@@ -143,7 +180,6 @@ class Application extends App implements IBootstrap {
 		$this->fileHooks($logger, $eventDispatcher);
 		$this->trashbinHooks($logger);
 		$this->versionsHooks($logger);
-		$this->tagHooks($logger, $eventDispatcher);
 	}
 
 	private function sharingLegacyHooks(IAuditLogger $logger): void {
@@ -155,23 +191,8 @@ class Application extends App implements IBootstrap {
 		Util::connectHook(Share::class, 'share_link_access', $shareActions, 'shareAccessed');
 	}
 
-	private function tagHooks(IAuditLogger $logger,
-		IEventDispatcher $eventDispatcher): void {
-		$eventDispatcher->addListener(ManagerEvent::EVENT_CREATE, function (ManagerEvent $event) use ($logger): void {
-			$tagActions = new TagManagement($logger);
-			$tagActions->createTag($event->getTag());
-		});
-	}
-
 	private function fileHooks(IAuditLogger $logger, IEventDispatcher $eventDispatcher): void {
 		$fileActions = new Files($logger);
-
-		$eventDispatcher->addListener(
-			BeforeNodeRenamedEvent::class,
-			function (BeforeNodeRenamedEvent $event) use ($fileActions): void {
-				$fileActions->beforeRename($event);
-			}
-		);
 
 		$eventDispatcher->addListener(
 			NodeRenamedEvent::class,
@@ -218,7 +239,6 @@ class Application extends App implements IBootstrap {
 
 	private function versionsHooks(IAuditLogger $logger): void {
 		$versionsActions = new Versions($logger);
-		Util::connectHook('\OCP\Versions', 'rollback', $versionsActions, 'rollback');
 		Util::connectHook('\OCP\Versions', 'delete', $versionsActions, 'delete');
 	}
 

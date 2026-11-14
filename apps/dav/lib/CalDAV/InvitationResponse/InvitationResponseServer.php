@@ -1,8 +1,10 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2018 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\CalDAV\InvitationResponse;
 
 use OCA\DAV\AppInfo\PluginManager;
@@ -10,6 +12,7 @@ use OCA\DAV\CalDAV\Auth\CustomPrincipalPlugin;
 use OCA\DAV\CalDAV\Auth\PublicPrincipalPlugin;
 use OCA\DAV\CalDAV\DefaultCalendarValidator;
 use OCA\DAV\CalDAV\Publishing\PublishPlugin;
+use OCA\DAV\CalDAV\SharingPlugin;
 use OCA\DAV\Connector\Sabre\AnonymousOptionsPlugin;
 use OCA\DAV\Connector\Sabre\BlockLegacyClientPlugin;
 use OCA\DAV\Connector\Sabre\CachingTree;
@@ -20,15 +23,18 @@ use OCA\DAV\Connector\Sabre\MaintenancePlugin;
 use OCA\DAV\Events\SabrePluginAuthInitEvent;
 use OCA\DAV\RootCollection;
 use OCA\Theming\ThemingDefaults;
+use OCP\App\IAppManager;
 use OCP\EventDispatcher\IEventDispatcher;
 use OCP\IConfig;
+use OCP\IURLGenerator;
+use OCP\L10N\IFactory;
 use OCP\Server;
+use OCP\Share\IManager as IShareManager;
 use Psr\Log\LoggerInterface;
 use Sabre\VObject\ITip\Message;
 
 class InvitationResponseServer {
-	/** @var \OCA\DAV\Connector\Sabre\Server */
-	public $server;
+	public \OCA\DAV\Connector\Sabre\Server $server;
 
 	/**
 	 * InvitationResponseServer constructor.
@@ -42,7 +48,7 @@ class InvitationResponseServer {
 		$this->server = new \OCA\DAV\Connector\Sabre\Server(new CachingTree($root));
 
 		// Add maintenance plugin
-		$this->server->addPlugin(new MaintenancePlugin(\OC::$server->getConfig(), \OC::$server->getL10N('dav')));
+		$this->server->addPlugin(new MaintenancePlugin(Server::get(IConfig::class), Server::get(IFactory::class)->get('dav')));
 
 		// Set URL explicitly due to reverse-proxy situations
 		$this->server->httpRequest->setUrl($baseUri);
@@ -79,13 +85,14 @@ class InvitationResponseServer {
 		// calendar plugins
 		$this->server->addPlugin(new \OCA\DAV\CalDAV\Plugin());
 		$this->server->addPlugin(new \Sabre\CalDAV\ICSExportPlugin());
-		$this->server->addPlugin(new \OCA\DAV\CalDAV\Schedule\Plugin(\OC::$server->getConfig(), \OC::$server->get(LoggerInterface::class), \OC::$server->get(DefaultCalendarValidator::class)));
+		$this->server->addPlugin(new \OCA\DAV\CalDAV\Schedule\Plugin(Server::get(IConfig::class), Server::get(LoggerInterface::class), Server::get(DefaultCalendarValidator::class)));
 		$this->server->addPlugin(new \Sabre\CalDAV\Subscriptions\Plugin());
 		$this->server->addPlugin(new \Sabre\CalDAV\Notifications\Plugin());
 		//$this->server->addPlugin(new \OCA\DAV\DAV\Sharing\Plugin($authBackend, \OC::$server->getRequest()));
+		$this->server->addPlugin(new SharingPlugin(Server::get(IShareManager::class)));
 		$this->server->addPlugin(new PublishPlugin(
-			\OC::$server->getConfig(),
-			\OC::$server->getURLGenerator()
+			Server::get(IURLGenerator::class),
+			Server::get(IShareManager::class),
 		));
 
 		// wait with registering these until auth is handled and the filesystem is setup
@@ -93,7 +100,7 @@ class InvitationResponseServer {
 			// register plugins from apps
 			$pluginManager = new PluginManager(
 				\OC::$server,
-				\OC::$server->getAppManager()
+				Server::get(IAppManager::class)
 			);
 			foreach ($pluginManager->getAppPlugins() as $appPlugin) {
 				$this->server->addPlugin($appPlugin);

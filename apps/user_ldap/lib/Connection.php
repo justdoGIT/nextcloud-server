@@ -5,9 +5,16 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\User_LDAP;
 
 use OC\ServerNotAvailableException;
+use OCA\User_LDAP\Exceptions\ConfigurationIssueException;
+use OCP\ICache;
+use OCP\ICacheFactory;
+use OCP\IL10N;
+use OCP\Server;
+use OCP\Util;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -28,6 +35,7 @@ use Psr\Log\LoggerInterface;
  * @property string $ldapTLS
  * @property string $turnOffCertCheck
  * @property string $ldapIgnoreNamingRules
+ * @property string $ldapUserActiveState
  * @property string $ldapUserDisplayName
  * @property string $ldapUserDisplayName2
  * @property string $ldapUserAvatarRule
@@ -89,8 +97,6 @@ use Psr\Log\LoggerInterface;
  */
 class Connection extends LDAPUtility {
 	private ?\LDAP\Connection $ldapConnectionRes = null;
-	private string $configPrefix;
-	private ?string $configID;
 	private bool $configured = false;
 
 	/**
@@ -109,7 +115,7 @@ class Connection extends LDAPUtility {
 	public $hasGidNumber = true;
 
 	/**
-	 * @var \OCP\ICache|null
+	 * @var ICache|null
 	 */
 	protected $cache = null;
 
@@ -131,27 +137,33 @@ class Connection extends LDAPUtility {
 	 */
 	protected $bindResult = [];
 
-	/** @var LoggerInterface */
-	protected $logger;
+	protected LoggerInterface $logger;
+	private IL10N $l10n;
+
+	/** @psalm-suppress ImpureStaticProperty This is a cache for whether php-ldap is installed, which cannot change mid-process */
+	private static bool $phpLDAPinstalled = true;
 
 	/**
 	 * Constructor
 	 * @param string $configPrefix a string with the prefix for the configkey column (appconfig table)
 	 * @param string|null $configID a string with the value for the appid column (appconfig table) or null for on-the-fly connections
 	 */
-	public function __construct(ILDAPWrapper $ldap, string $configPrefix = '', ?string $configID = 'user_ldap') {
+	public function __construct(
+		ILDAPWrapper $ldap,
+		private string $configPrefix = '',
+		private ?string $configID = 'user_ldap',
+	) {
 		parent::__construct($ldap);
-		$this->configPrefix = $configPrefix;
-		$this->configID = $configID;
-		$this->configuration = new Configuration($configPrefix, !is_null($configID));
-		$memcache = \OC::$server->getMemCacheFactory();
+		$this->configuration = new Configuration($this->configPrefix, !is_null($this->configID));
+		$memcache = Server::get(ICacheFactory::class);
 		if ($memcache->isAvailable()) {
 			$this->cache = $memcache->createDistributed();
 		}
-		$helper = new Helper(\OC::$server->getConfig(), \OC::$server->getDatabaseConnection());
+		$helper = Server::get(Helper::class);
 		$this->doNotValidate = !in_array($this->configPrefix,
-			$helper->getServerConfigurationPrefixes());
-		$this->logger = \OC::$server->get(LoggerInterface::class);
+			$helper->getServerConfigurationPrefixes(), true);
+		$this->logger = Server::get(LoggerInterface::class);
+		$this->l10n = Util::getL10N('user_ldap');
 	}
 
 	public function __destruct() {
@@ -302,7 +314,7 @@ class Connection extends LDAPUtility {
 		$key = $this->getCacheKey($key);
 		$value = base64_encode(json_encode($value));
 		$ttl = $ttlOverride ?? $this->configuration->ldapCacheTTL;
-		$this->cache->set($key, $value, $ttl);
+		$this->cache->set($key, $value, (int)$ttl);
 	}
 
 	public function clearCache() {
@@ -327,18 +339,18 @@ class Connection extends LDAPUtility {
 	 * set LDAP configuration with values delivered by an array, not read from configuration
 	 * @param array $config array that holds the config parameters in an associated array
 	 * @param array &$setParameters optional; array where the set fields will be given to
+	 * @param bool $throw if true, throw ConfigurationIssueException with details instead of returning false
 	 * @return bool true if config validates, false otherwise. Check with $setParameters for detailed success on single parameters
 	 */
-	public function setConfiguration($config, &$setParameters = null): bool {
+	public function setConfiguration(array $config, ?array &$setParameters = null, bool $throw = false): bool {
 		if (is_null($setParameters)) {
 			$setParameters = [];
 		}
 		$this->doNotValidate = false;
 		$this->configuration->setConfiguration($config, $setParameters);
 		if (count($setParameters) > 0) {
-			$this->configured = $this->validateConfiguration();
+			$this->configured = $this->validateConfiguration($throw);
 		}
-
 
 		return $this->configured;
 	}
@@ -405,7 +417,7 @@ class Connection extends LDAPUtility {
 			} else {
 				$uuidAttributes = Access::UUID_ATTRIBUTES;
 				array_unshift($uuidAttributes, 'auto');
-				if (!in_array($this->configuration->$effectiveSetting, $uuidAttributes)
+				if (!in_array($this->configuration->$effectiveSetting, $uuidAttributes, true)
 					&& !is_null($this->configID)) {
 					$this->configuration->$effectiveSetting = 'auto';
 					$this->configuration->saveConfiguration();
@@ -442,10 +454,10 @@ class Connection extends LDAPUtility {
 		}
 	}
 
-	private function doCriticalValidation(): bool {
-		$configurationOK = true;
-		$errorStr = 'Configuration Error (prefix ' . $this->configPrefix . '): ';
-
+	/**
+	 * @throws ConfigurationIssueException
+	 */
+	private function doCriticalValidation(): void {
 		//options that shall not be empty
 		$options = ['ldapHost', 'ldapUserDisplayName',
 			'ldapGroupDisplayName', 'ldapLoginFilter'];
@@ -478,10 +490,9 @@ class Connection extends LDAPUtility {
 						$subj = $key;
 						break;
 				}
-				$configurationOK = false;
-				$this->logger->warning(
-					$errorStr . 'No ' . $subj . ' given!',
-					['app' => 'user_ldap']
+				throw new ConfigurationIssueException(
+					'No ' . $subj . ' given!',
+					$this->l10n->t('Mandatory field "%s" left empty', $subj),
 				);
 			}
 		}
@@ -489,47 +500,62 @@ class Connection extends LDAPUtility {
 		//combinations
 		$agent = $this->configuration->ldapAgentName;
 		$pwd = $this->configuration->ldapAgentPassword;
-		if (
-			($agent === '' && $pwd !== '')
-			|| ($agent !== '' && $pwd === '')
-		) {
-			$this->logger->warning(
-				$errorStr . 'either no password is given for the user ' .
-					'agent or a password is given, but not an LDAP agent.',
-				['app' => 'user_ldap']
+		if ($agent === '' && $pwd !== '') {
+			throw new ConfigurationIssueException(
+				'A password is given, but not an LDAP agent',
+				$this->l10n->t('A password is given, but not an LDAP agent'),
 			);
-			$configurationOK = false;
+		}
+		if ($agent !== '' && $pwd === '') {
+			throw new ConfigurationIssueException(
+				'No password is given for the user agent',
+				$this->l10n->t('No password is given for the user agent'),
+			);
 		}
 
 		$base = $this->configuration->ldapBase;
 		$baseUsers = $this->configuration->ldapBaseUsers;
 		$baseGroups = $this->configuration->ldapBaseGroups;
 
-		if (empty($base) && empty($baseUsers) && empty($baseGroups)) {
-			$this->logger->warning(
-				$errorStr . 'Not a single Base DN given.',
-				['app' => 'user_ldap']
+		if (empty($base)) {
+			throw new ConfigurationIssueException(
+				'Not a single Base DN given',
+				$this->l10n->t('No LDAP base DN was given'),
 			);
-			$configurationOK = false;
 		}
 
-		if (mb_strpos((string)$this->configuration->ldapLoginFilter, '%uid', 0, 'UTF-8')
-		   === false) {
-			$this->logger->warning(
-				$errorStr . 'login filter does not contain %uid place holder.',
-				['app' => 'user_ldap']
+		if (mb_strpos((string)$this->configuration->ldapLoginFilter, '%uid', 0, 'UTF-8') === false) {
+			throw new ConfigurationIssueException(
+				'Login filter does not contain %uid placeholder.',
+				$this->l10n->t('Login filter does not contain %s placeholder.', ['%uid']),
 			);
-			$configurationOK = false;
 		}
+	}
 
-		return $configurationOK;
+	/**
+	 * Checks that all bases are subnodes of one of the root bases
+	 */
+	private function checkBasesAreValid(array $bases, array $rootBases): bool {
+		foreach ($bases as $base) {
+			$ok = false;
+			foreach ($rootBases as $rootBase) {
+				if (str_ends_with($base, $rootBase)) {
+					$ok = true;
+					break;
+				}
+			}
+			if (!$ok) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
 	 * Validates the user specified configuration
 	 * @return bool true if configuration seems OK, false otherwise
 	 */
-	private function validateConfiguration(): bool {
+	private function validateConfiguration(bool $throw = false): bool {
 		if ($this->doNotValidate) {
 			//don't do a validation if it is a new configuration with pure
 			//default values. Will be allowed on changes via __set or
@@ -543,9 +569,20 @@ class Connection extends LDAPUtility {
 
 		//second step: critical checks. If left empty or filled wrong, mark as
 		//not configured and give a warning.
-		return $this->doCriticalValidation();
+		try {
+			$this->doCriticalValidation();
+			return true;
+		} catch (ConfigurationIssueException $e) {
+			if ($throw) {
+				throw $e;
+			}
+			$this->logger->warning(
+				'Configuration Error (prefix ' . $this->configPrefix . '): ' . $e->getMessage(),
+				['exception' => $e]
+			);
+			return false;
+		}
 	}
-
 
 	/**
 	 * Connects and Binds to LDAP
@@ -556,8 +593,7 @@ class Connection extends LDAPUtility {
 		if (!$this->configuration->ldapConfigurationActive) {
 			return null;
 		}
-		static $phpLDAPinstalled = true;
-		if (!$phpLDAPinstalled) {
+		if (!static::$phpLDAPinstalled) {
 			return false;
 		}
 		if (!$this->ignoreValidation && !$this->configured) {
@@ -569,26 +605,13 @@ class Connection extends LDAPUtility {
 		}
 		if (!$this->ldapConnectionRes) {
 			if (!$this->ldap->areLDAPFunctionsAvailable()) {
-				$phpLDAPinstalled = false;
+				static::$phpLDAPinstalled = false;
 				$this->logger->error(
 					'function ldap_connect is not available. Make sure that the PHP ldap module is installed.',
 					['app' => 'user_ldap']
 				);
 
 				return false;
-			}
-			if ($this->configuration->turnOffCertCheck) {
-				if (putenv('LDAPTLS_REQCERT=never')) {
-					$this->logger->debug(
-						'Turned off SSL certificate validation successfully.',
-						['app' => 'user_ldap']
-					);
-				} else {
-					$this->logger->warning(
-						'Could not turn off SSL certificate validation.',
-						['app' => 'user_ldap']
-					);
-				}
 			}
 
 			$hasBackupHost = (trim($this->configuration->ldapBackupHost ?? '') !== '');
@@ -613,9 +636,11 @@ class Connection extends LDAPUtility {
 					}
 				}
 				$this->logger->warning(
-					'Main LDAP not reachable, connecting to backup',
+					'Main LDAP not reachable, connecting to backup: {msg}',
 					[
-						'app' => 'user_ldap'
+						'app' => 'user_ldap',
+						'msg' => $e->getMessage(),
+						'exception' => $e,
 					]
 				);
 			}
@@ -624,8 +649,8 @@ class Connection extends LDAPUtility {
 			$this->doConnect($this->configuration->ldapBackupHost ?? '', $this->configuration->ldapBackupPort ?? '');
 			$this->bindResult = [];
 			$bindStatus = $this->bind();
-			$error = $this->ldap->isResource($this->ldapConnectionRes) ?
-				$this->ldap->errno($this->ldapConnectionRes) : -1;
+			$error = $this->ldap->isResource($this->ldapConnectionRes)
+				? $this->ldap->errno($this->ldapConnectionRes) : -1;
 			if ($bindStatus && $error === 0 && !$forceBackupHost) {
 				//when bind to backup server succeeded and failed to main server,
 				//skip contacting it for 15min
@@ -640,11 +665,27 @@ class Connection extends LDAPUtility {
 	/**
 	 * @param string $host
 	 * @param string $port
-	 * @throws \OC\ServerNotAvailableException
+	 * @throws ServerNotAvailableException
 	 */
 	private function doConnect($host, $port): bool {
 		if ($host === '') {
 			return false;
+		}
+
+		if ($this->configuration->turnOffCertCheck) {
+			if ($this->ldap->setOption(null, LDAP_OPT_X_TLS_REQUIRE_CERT, LDAP_OPT_X_TLS_NEVER)) {
+				$this->logger->debug(
+					'Turned off SSL certificate validation successfully.',
+					['app' => 'user_ldap']
+				);
+			} else {
+				$this->logger->warning(
+					'Could not turn off SSL certificate validation.',
+					['app' => 'user_ldap']
+				);
+			}
+		} else {
+			$this->ldap->setOption(null, LDAP_OPT_X_TLS_REQUIRE_CERT, LDAP_OPT_X_TLS_DEMAND);
 		}
 
 		$this->ldapConnectionRes = $this->ldap->connect($host, $port) ?: null;
@@ -709,7 +750,7 @@ class Connection extends LDAPUtility {
 			$errno = $this->ldap->errno($cr);
 
 			$this->logger->warning(
-				'Bind failed: ' . $errno . ': ' . $this->ldap->error($cr),
+				'Bind failed for ' . $this->configuration->ldapAgentName . ': ' . $errno . ': ' . $this->ldap->error($cr),
 				['app' => 'user_ldap']
 			);
 

@@ -28,6 +28,7 @@ class RichTextField extends Field {
 	/**
 	 * @since 30.0.0
 	 */
+	#[\Override]
 	public function setValue(mixed $value): void {
 		if (!is_string($value)) {
 			throw new \Exception('Invalid value for rich-text field type');
@@ -37,8 +38,18 @@ class RichTextField extends Field {
 	}
 
 	/**
+	 * @return array{
+	 *     index: string,
+	 *     type: string,
+	 *     alias: ?string,
+	 *     tag: ?string,
+	 *     id: ?int,
+	 *     content?: string,
+	 *     checked?: bool,
+	 * }
 	 * @since 30.0.0
 	 */
+	#[\Override]
 	public function jsonSerialize(): array {
 		$jsonProperties = parent::jsonSerialize();
 

@@ -22,19 +22,22 @@ class PhpMemoryLimit implements ISetupCheck {
 	) {
 	}
 
+	#[\Override]
 	public function getCategory(): string {
 		return 'php';
 	}
 
+	#[\Override]
 	public function getName(): string {
 		return $this->l10n->t('PHP memory limit');
 	}
 
+	#[\Override]
 	public function run(): SetupResult {
 		if ($this->memoryInfo->isMemoryLimitSufficient()) {
 			return SetupResult::success(Util::humanFileSize($this->memoryInfo->getMemoryLimit()));
 		} else {
-			return SetupResult::error($this->l10n->t('The PHP memory limit is below the recommended value of %s.', Util::humanFileSize(MemoryInfo::RECOMMENDED_MEMORY_LIMIT)));
+			return SetupResult::error($this->l10n->t('The PHP memory limit is below the recommended value of %s. Some features or apps - including the Updater - may not function properly.', Util::humanFileSize(MemoryInfo::RECOMMENDED_MEMORY_LIMIT)));
 		}
 	}
 }

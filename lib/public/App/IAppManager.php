@@ -5,6 +5,7 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCP\App;
 
 use OCP\IGroup;
@@ -16,6 +17,8 @@ use OCP\IUser;
  * @warning This interface shouldn't be included with dependency injection in
  *          classes used for installing Nextcloud.
  *
+ * @psalm-import-type AppInfoDefinition from AppInfoDefinition
+ * @psalm-import-type AppInfoXmlDefinition from AppInfoDefinition
  * @since 8.0.0
  */
 interface IAppManager {
@@ -28,15 +31,18 @@ interface IAppManager {
 	 * Returns the app information from "appinfo/info.xml" for an app
 	 *
 	 * @param string|null $lang
-	 * @return array|null
+	 * @return AppInfoDefinition|AppInfoXmlDefinition|null
+	 * @psalm-return ($lang is null ? (AppInfoXmlDefinition|null) : (AppInfoDefinition|null))
 	 * @since 14.0.0
 	 * @since 31.0.0 Usage of $path is discontinued and throws an \InvalidArgumentException, use {@see self::getAppInfoByPath} instead.
 	 */
-	public function getAppInfo(string $appId, bool $path = false, $lang = null);
+	public function getAppInfo(string $appId, bool $path = false, $lang = null): ?array;
 
 	/**
 	 * Returns the app information from a given path ending with "/appinfo/info.xml"
 	 *
+	 * @return AppInfoDefinition|AppInfoXmlDefinition|null
+	 * @psalm-return ($lang is null ? (AppInfoXmlDefinition|null) : (AppInfoDefinition|null))
 	 * @since 31.0.0
 	 */
 	public function getAppInfoByPath(string $path, ?string $lang = null): ?array;
@@ -50,6 +56,14 @@ interface IAppManager {
 	 * @since 14.0.0
 	 */
 	public function getAppVersion(string $appId, bool $useCache = true): string;
+
+	/**
+	 * Returns the installed version of all apps
+	 *
+	 * @return array<string, string>
+	 * @since 32.0.0
+	 */
+	public function getAppInstalledVersions(bool $onlyEnabled = false): array;
 
 	/**
 	 * Returns the app icon or null if none is found
@@ -79,8 +93,16 @@ interface IAppManager {
 	 * @param string $appId
 	 * @return bool
 	 * @since 8.0.0
+	 * @deprecated 32.0.0 Use either {@see self::isEnabledForUser} or {@see self::isEnabledForAnyone}
 	 */
 	public function isInstalled($appId);
+
+	/**
+	 * Check if an app is enabled in the instance, either for everyone or for specific groups
+	 *
+	 * @since 32.0.0
+	 */
+	public function isEnabledForAnyone(string $appId): bool;
 
 	/**
 	 * Check if an app should be enabled by default
@@ -130,7 +152,7 @@ interface IAppManager {
 	 * Enable an app only for specific groups
 	 *
 	 * @param string $appId
-	 * @param \OCP\IGroup[] $groups
+	 * @param list<\OCP\IGroup|string> $groups
 	 * @param bool $forceEnable
 	 * @throws \Exception
 	 * @since 8.0.0
@@ -144,15 +166,16 @@ interface IAppManager {
 	 * @param bool $automaticDisabled
 	 * @since 8.0.0
 	 */
-	public function disableApp($appId, $automaticDisabled = false);
+	public function disableApp($appId, $automaticDisabled = false): void;
 
 	/**
 	 * Get the directory for the given app.
 	 *
 	 * @since 11.0.0
+	 * @since 32.0.0 Added param $ignoreCache to ignore cache
 	 * @throws AppPathNotFoundException
 	 */
-	public function getAppPath(string $appId): string;
+	public function getAppPath(string $appId, bool $ignoreCache = false): string;
 
 	/**
 	 * Get the web path for the given app.
@@ -168,7 +191,7 @@ interface IAppManager {
 	 * List all apps enabled for a user
 	 *
 	 * @param \OCP\IUser $user
-	 * @return string[]
+	 * @return list<string>
 	 * @since 8.1.0
 	 */
 	public function getEnabledAppsForUser(IUser $user);
@@ -178,14 +201,25 @@ interface IAppManager {
 	 *
 	 * @return string[]
 	 * @since 8.1.0
+	 * @deprecated 32.0.0 Use either {@see self::getEnabledApps} or {@see self::getEnabledAppsForUser}
 	 */
 	public function getInstalledApps();
+
+	/**
+	 * List all apps enabled
+	 *
+	 * Including apps enabled for everyone and also including apps only enabled for specific groups.
+	 *
+	 * @return list<string>
+	 * @since 32.0.0
+	 */
+	public function getEnabledApps(): array;
 
 	/**
 	 * Clear the cached list of apps when enabling/disabling an app
 	 * @since 8.1.0
 	 */
-	public function clearAppsCache();
+	public function clearAppsCache(): void;
 
 	/**
 	 * @param string $appId
@@ -197,20 +231,19 @@ interface IAppManager {
 	/**
 	 * Loads all apps
 	 *
-	 * @param string[] $types
-	 * @return bool
-	 *
 	 * This function walks through the Nextcloud directory and loads all apps
-	 * it can find. A directory contains an app if the file /appinfo/info.xml
+	 * it can find. A directory contains an app if the file `/appinfo/info.xml`
 	 * exists.
 	 *
-	 * if $types is set to non-empty array, only apps of those types will be loaded
+	 * @param string[] $types - If set, only apps of these types will be loaded
 	 * @since 27.0.0
 	 */
 	public function loadApps(array $types = []): bool;
 
 	/**
 	 * Check if an app is of a specific type
+	 *
+	 * @param string[] $types - The types to check for
 	 * @since 27.0.0
 	 */
 	public function isType(string $app, array $types): bool;
@@ -271,7 +304,7 @@ interface IAppManager {
 	/**
 	 * Set the global default apps with fallbacks
 	 *
-	 * @param string[] $appId
+	 * @param string[] $defaultApps
 	 * @throws \InvalidArgumentException If any of the apps is not installed
 	 * @since 28.0.0
 	 * @deprecated 31.0.0
@@ -292,10 +325,17 @@ interface IAppManager {
 	/**
 	 * Clean the appId from forbidden characters
 	 *
+	 * @psalm-taint-escape callable
+	 * @psalm-taint-escape cookie
 	 * @psalm-taint-escape file
-	 * @psalm-taint-escape include
-	 * @psalm-taint-escape html
 	 * @psalm-taint-escape has_quotes
+	 * @psalm-taint-escape header
+	 * @psalm-taint-escape html
+	 * @psalm-taint-escape include
+	 * @psalm-taint-escape ldap
+	 * @psalm-taint-escape shell
+	 * @psalm-taint-escape sql
+	 * @psalm-taint-escape unserialize
 	 *
 	 * @since 31.0.0
 	 */
@@ -308,4 +348,50 @@ interface IAppManager {
 	 * @since 31.0.0
 	 */
 	public function getAllAppsInAppsFolders(): array;
+
+	/**
+	 * Run upgrade tasks for an app after the code has already been updated
+	 *
+	 * @throws AppPathNotFoundException if app folder can't be found
+	 * @since 32.0.0
+	 */
+	public function upgradeApp(string $appId): bool;
+
+	/**
+	 * Check whether the installed version is the same as the version from info.xml
+	 *
+	 * @since 32.0.0
+	 */
+	public function isUpgradeRequired(string $appId): bool;
+
+	/**
+	 * Check whether the current Nextcloud version matches the given
+	 * application's version requirements.
+	 *
+	 * The comparison is made based on the number of parts that the
+	 * app info version has. For example for Nextcloud 26.0.3 if the
+	 * app info version is expecting version 26.0, the comparison is
+	 * made on the first two parts of the Nextcloud version.
+	 * This means that it's possible to specify "requiremin" => 26
+	 * and "requiremax" => 26 and it will still match Nextcloud 26.0.3.
+	 *
+	 * @param string $serverVersion Nextcloud version to check against
+	 * @param array $appInfo app info (from xml)
+	 * @since 32.0.0
+	 */
+	public function isAppCompatible(string $serverVersion, array $appInfo, bool $ignoreMax = false): bool;
+
+	/**
+	 * Get the app namespace
+	 *
+	 * @since 34.0.0
+	 */
+	public function getAppNamespace(string $appId): string;
+
+	/**
+	 * Get the app id for this namespace
+	 *
+	 * @since 34.0.0
+	 */
+	public function getAppFromNamespace(string $className): ?string;
 }

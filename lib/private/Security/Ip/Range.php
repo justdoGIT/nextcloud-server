@@ -10,6 +10,7 @@ namespace OC\Security\Ip;
 
 use InvalidArgumentException;
 use IPLib\Factory;
+use IPLib\ParseStringFlag;
 use IPLib\Range\RangeInterface;
 use OCP\Security\Ip\IAddress;
 use OCP\Security\Ip\IRange;
@@ -25,12 +26,14 @@ class Range implements IRange {
 		$this->range = $range;
 	}
 
+	#[\Override]
 	public static function isValid(string $range): bool {
 		return Factory::parseRangeString($range) !== null;
 	}
 
+	#[\Override]
 	public function contains(IAddress $address): bool {
-		return $this->range->contains(Factory::parseAddressString((string)$address));
+		return $this->range->contains(Factory::parseAddressString((string)$address, ParseStringFlag::MAY_INCLUDE_ZONEID));
 	}
 
 	public function __toString(): string {

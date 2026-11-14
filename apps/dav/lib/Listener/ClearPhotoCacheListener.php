@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2022 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Listener;
 
 use OCA\DAV\CardDAV\PhotoCache;
@@ -16,12 +17,12 @@ use OCP\EventDispatcher\IEventListener;
 
 /** @template-implements IEventListener<CardUpdatedEvent|CardDeletedEvent> */
 class ClearPhotoCacheListener implements IEventListener {
-	private PhotoCache $photoCache;
-
-	public function __construct(PhotoCache $photoCache) {
-		$this->photoCache = $photoCache;
+	public function __construct(
+		private PhotoCache $photoCache,
+	) {
 	}
 
+	#[\Override]
 	public function handle(Event $event): void {
 		if ($event instanceof CardUpdatedEvent || $event instanceof CardDeletedEvent) {
 			$cardData = $event->getCardData();

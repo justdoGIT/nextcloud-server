@@ -1,22 +1,27 @@
 <?php
+
 /**
- * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
+ * SPDX-FileCopyrightText: 2016-2026 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Files_Sharing\Controller;
 
-use OCA\Files_External\NotFoundException;
+use NCU\AppFramework\Http\Attribute\TokenScope;
+use OCA\Files\TokenScopes;
 use OCA\Files_Sharing\ResponseDefinitions;
 use OCP\AppFramework\ApiController;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\BruteForceProtection;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
+use OCP\AppFramework\Http\Attribute\OpenAPI;
 use OCP\AppFramework\Http\Attribute\PublicPage;
 use OCP\AppFramework\Http\JSONResponse;
 use OCP\Constants;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\Node;
+use OCP\Files\NotFoundException;
 use OCP\IRequest;
 use OCP\Share\Exceptions\ShareNotFound;
 use OCP\Share\IManager;
@@ -24,10 +29,8 @@ use OCP\Share\IManager;
 /**
  * @psalm-import-type Files_SharingShareInfo from ResponseDefinitions
  */
+#[TokenScope(scope: TokenScopes::FILES_READ)]
 class ShareInfoController extends ApiController {
-
-	/** @var IManager */
-	private $shareManager;
 
 	/**
 	 * ShareInfoController constructor.
@@ -36,12 +39,12 @@ class ShareInfoController extends ApiController {
 	 * @param IRequest $request
 	 * @param IManager $shareManager
 	 */
-	public function __construct(string $appName,
+	public function __construct(
+		string $appName,
 		IRequest $request,
-		IManager $shareManager) {
+		private IManager $shareManager,
+	) {
 		parent::__construct($appName, $request);
-
-		$this->shareManager = $shareManager;
 	}
 
 	/**
@@ -51,7 +54,7 @@ class ShareInfoController extends ApiController {
 	 * @param string|null $password Password of the share
 	 * @param string|null $dir Subdirectory to get info about
 	 * @param int $depth Maximum depth to get info about
-	 * @return JSONResponse<Http::STATUS_OK, Files_SharingShareInfo, array{}>|JSONResponse<Http::STATUS_FORBIDDEN|Http::STATUS_NOT_FOUND, array<empty>, array{}>
+	 * @return JSONResponse<Http::STATUS_OK, Files_SharingShareInfo, array{}>|JSONResponse<Http::STATUS_FORBIDDEN|Http::STATUS_NOT_FOUND, list<empty>, array{}>
 	 *
 	 * 200: Share info returned
 	 * 403: Getting share info is not allowed
@@ -60,6 +63,7 @@ class ShareInfoController extends ApiController {
 	#[PublicPage]
 	#[NoCSRFRequired]
 	#[BruteForceProtection(action: 'shareinfo')]
+	#[OpenAPI(scope: OpenAPI::SCOPE_DEFAULT)]
 	public function info(string $t, ?string $password = null, ?string $dir = null, int $depth = -1): JSONResponse {
 		try {
 			$share = $this->shareManager->getShareByToken($t);
@@ -69,7 +73,7 @@ class ShareInfoController extends ApiController {
 			return $response;
 		}
 
-		if ($share->getPassword() && !$this->shareManager->checkPassword($share, $password)) {
+		if ($share->isPasswordProtected() && !$this->shareManager->checkPassword($share, $password)) {
 			$response = new JSONResponse([], Http::STATUS_FORBIDDEN);
 			$response->throttle(['token' => $t]);
 			return $response;

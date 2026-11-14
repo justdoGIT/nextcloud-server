@@ -5,10 +5,14 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OC\Preview;
 
 use OCP\Files\File;
 use OCP\IImage;
+use OCP\Image;
+use OCP\Server;
+use Psr\Log\LoggerInterface;
 use wapmorgan\Mp3Info\Mp3Info;
 use function OCP\Log\logger;
 
@@ -16,6 +20,7 @@ class MP3 extends ProviderV2 {
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function getMimeType(): string {
 		return '/audio\/mpeg/';
 	}
@@ -23,8 +28,16 @@ class MP3 extends ProviderV2 {
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function getThumbnail(File $file, int $maxX, int $maxY): ?IImage {
 		$tmpPath = $this->getLocalFile($file);
+		if ($tmpPath === false) {
+			Server::get(LoggerInterface::class)->error(
+				'Failed to get local file to generate thumbnail for: ' . $file->getPath(),
+				['app' => 'core']
+			);
+			return null;
+		}
 
 		try {
 			$audio = new Mp3Info($tmpPath, true);
@@ -41,7 +54,7 @@ class MP3 extends ProviderV2 {
 		}
 
 		if (is_string($picture)) {
-			$image = new \OCP\Image();
+			$image = new Image();
 			$image->loadFromData($picture);
 
 			if ($image->valid()) {

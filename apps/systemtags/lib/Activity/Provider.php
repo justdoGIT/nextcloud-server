@@ -1,8 +1,10 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\SystemTags\Activity;
 
 use OCP\Activity\Exceptions\UnknownActivityException;
@@ -22,20 +24,8 @@ class Provider implements IProvider {
 	public const ASSIGN_TAG = 'assign_tag';
 	public const UNASSIGN_TAG = 'unassign_tag';
 
-	/** @var IFactory */
-	protected $languageFactory;
-
 	/** @var IL10N */
 	protected $l;
-
-	/** @var IURLGenerator */
-	protected $url;
-
-	/** @var IManager */
-	protected $activityManager;
-
-	/** @var IUserManager */
-	protected $userManager;
 
 	/**
 	 * @param IFactory $languageFactory
@@ -43,11 +33,12 @@ class Provider implements IProvider {
 	 * @param IManager $activityManager
 	 * @param IUserManager $userManager
 	 */
-	public function __construct(IFactory $languageFactory, IURLGenerator $url, IManager $activityManager, IUserManager $userManager) {
-		$this->languageFactory = $languageFactory;
-		$this->url = $url;
-		$this->activityManager = $activityManager;
-		$this->userManager = $userManager;
+	public function __construct(
+		protected IFactory $languageFactory,
+		protected IURLGenerator $url,
+		protected IManager $activityManager,
+		protected IUserManager $userManager,
+	) {
 	}
 
 	/**
@@ -58,6 +49,7 @@ class Provider implements IProvider {
 	 * @throws UnknownActivityException
 	 * @since 11.0.0
 	 */
+	#[\Override]
 	public function parse($language, IEvent $event, ?IEvent $previousEvent = null) {
 		if ($event->getApp() !== 'systemtags') {
 			throw new UnknownActivityException();
@@ -286,7 +278,7 @@ class Provider implements IProvider {
 	protected function getFileParameter($id, $path) {
 		return [
 			'type' => 'file',
-			'id' => $id,
+			'id' => (string)$id,
 			'name' => basename($path),
 			'path' => trim($path, '/'),
 		];
@@ -297,7 +289,7 @@ class Provider implements IProvider {
 		if ($tagData === null) {
 			[$name, $status] = explode('|||', substr($parameter, 3, -3));
 			$tagData = [
-				'id' => 0,// No way to recover the ID
+				'id' => '0', // No way to recover the ID
 				'name' => $name,
 				'assignable' => $status === 'assignable',
 				'visible' => $status !== 'invisible',
@@ -306,7 +298,7 @@ class Provider implements IProvider {
 
 		return [
 			'type' => 'systemtag',
-			'id' => (int)$tagData['id'],
+			'id' => (string)$tagData['id'],
 			'name' => $tagData['name'],
 			'assignable' => $tagData['assignable'] ? '1' : '0',
 			'visibility' => $tagData['visible'] ? '1' : '0',

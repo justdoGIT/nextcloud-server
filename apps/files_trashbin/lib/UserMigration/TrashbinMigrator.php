@@ -32,25 +32,17 @@ class TrashbinMigrator implements IMigrator, ISizeEstimationMigrator {
 	protected const PATH_FILES_FOLDER = Application::APP_ID . '/files';
 	protected const PATH_LOCATIONS_FILE = Application::APP_ID . '/locations.json';
 
-	protected IRootFolder $root;
-
-	protected IDBConnection $dbc;
-
-	protected IL10N $l10n;
-
 	public function __construct(
-		IRootFolder $rootFolder,
-		IDBConnection $dbc,
-		IL10N $l10n,
+		protected IRootFolder $root,
+		protected IDBConnection $dbc,
+		protected IL10N $l10n,
 	) {
-		$this->root = $rootFolder;
-		$this->dbc = $dbc;
-		$this->l10n = $l10n;
 	}
 
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function getEstimatedExportSize(IUser $user): int|float {
 		$uid = $user->getUID();
 
@@ -68,6 +60,7 @@ class TrashbinMigrator implements IMigrator, ISizeEstimationMigrator {
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function export(IUser $user, IExportDestination $exportDestination, OutputInterface $output): void {
 		$output->writeln('Exporting trashbin into ' . Application::APP_ID . '…');
 
@@ -100,6 +93,7 @@ class TrashbinMigrator implements IMigrator, ISizeEstimationMigrator {
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function import(IUser $user, IImportSource $importSource, OutputInterface $output): void {
 		if ($importSource->getMigratorVersion($this->getId()) === null) {
 			$output->writeln('No version for ' . static::class . ', skipping import…');
@@ -153,6 +147,7 @@ class TrashbinMigrator implements IMigrator, ISizeEstimationMigrator {
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function getId(): string {
 		return 'trashbin';
 	}
@@ -160,6 +155,7 @@ class TrashbinMigrator implements IMigrator, ISizeEstimationMigrator {
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function getDisplayName(): string {
 		return $this->l10n->t('Deleted files');
 	}
@@ -167,6 +163,7 @@ class TrashbinMigrator implements IMigrator, ISizeEstimationMigrator {
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function getDescription(): string {
 		return $this->l10n->t('Deleted files and folders in the trash bin (may expire during export if you are low on storage space)');
 	}

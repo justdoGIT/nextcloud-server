@@ -3,11 +3,11 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import axios from '@nextcloud/axios'
 import { getCurrentUser } from '@nextcloud/auth'
-import { generateOcsUrl } from '@nextcloud/router'
+import axios from '@nextcloud/axios'
 import { confirmPassword } from '@nextcloud/password-confirmation'
-import '@nextcloud/password-confirmation/dist/style.css'
+import { generateOcsUrl } from '@nextcloud/router'
+import { ocsData } from '../utils/handlers.ts'
 
 /**
  * Save the visibility of the profile parameter
@@ -16,7 +16,7 @@ import '@nextcloud/password-confirmation/dist/style.css'
  * @param {string} visibility the visibility
  * @return {object}
  */
-export const saveProfileParameterVisibility = async (paramId, visibility) => {
+export async function saveProfileParameterVisibility(paramId, visibility) {
 	const userId = getCurrentUser().uid
 	const url = generateOcsUrl('/profile/{userId}', { userId })
 
@@ -27,7 +27,7 @@ export const saveProfileParameterVisibility = async (paramId, visibility) => {
 		visibility,
 	})
 
-	return res.data
+	return ocsData(res)
 }
 
 /**
@@ -36,7 +36,7 @@ export const saveProfileParameterVisibility = async (paramId, visibility) => {
  * @param {boolean} isEnabled the default
  * @return {object}
  */
-export const saveProfileDefault = async (isEnabled) => {
+export async function saveProfileDefault(isEnabled) {
 	// Convert to string for compatibility
 	isEnabled = isEnabled ? '1' : '0'
 
@@ -51,5 +51,53 @@ export const saveProfileDefault = async (isEnabled) => {
 		value: isEnabled,
 	})
 
-	return res.data
+	return ocsData(res)
+}
+
+/**
+ * Save profile picker default
+ *
+ * @param {boolean} isEnabled the default
+ * @return {object}
+ */
+export async function saveProfilePicker(isEnabled) {
+	// Convert to string for compatibility
+	isEnabled = isEnabled ? '1' : '0'
+
+	const url = generateOcsUrl('/apps/provisioning_api/api/v1/config/apps/{appId}/{key}', {
+		appId: 'settings',
+		key: 'profile_picker_enabled',
+	})
+
+	await confirmPassword()
+
+	const res = await axios.post(url, {
+		value: isEnabled,
+	})
+
+	return ocsData(res)
+}
+
+/**
+ * Save profile private
+ *
+ * @param {boolean} isEnabled the default
+ * @return {object}
+ */
+export async function saveProfilePrivate(isEnabled) {
+	// Convert to string for compatibility
+	isEnabled = isEnabled ? '1' : '0'
+
+	const url = generateOcsUrl('/apps/provisioning_api/api/v1/config/apps/{appId}/{key}', {
+		appId: 'settings',
+		key: 'profile_private',
+	})
+
+	await confirmPassword()
+
+	const res = await axios.post(url, {
+		value: isEnabled,
+	})
+
+	return ocsData(res)
 }

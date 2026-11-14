@@ -1,8 +1,10 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2017 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\CalDAV;
 
 use Sabre\DAV\Exception\NotFound;
@@ -12,9 +14,9 @@ class PublicCalendar extends Calendar {
 	/**
 	 * @param string $name
 	 * @throws NotFound
-	 * @return PublicCalendarObject
 	 */
-	public function getChild($name) {
+	#[\Override]
+	public function getChild($name): PublicCalendarObject {
 		$obj = $this->caldavBackend->getCalendarObject($this->calendarInfo['id'], $name);
 
 		if (!$obj) {
@@ -31,7 +33,8 @@ class PublicCalendar extends Calendar {
 	/**
 	 * @return PublicCalendarObject[]
 	 */
-	public function getChildren() {
+	#[\Override]
+	public function getChildren(): array {
 		$objs = $this->caldavBackend->getCalendarObjects($this->calendarInfo['id']);
 		$children = [];
 		foreach ($objs as $obj) {
@@ -48,7 +51,8 @@ class PublicCalendar extends Calendar {
 	 * @param string[] $paths
 	 * @return PublicCalendarObject[]
 	 */
-	public function getMultipleChildren(array $paths) {
+	#[\Override]
+	public function getMultipleChildren(array $paths): array {
 		$objs = $this->caldavBackend->getMultipleCalendarObjects($this->calendarInfo['id'], $paths);
 		$children = [];
 		foreach ($objs as $obj) {
@@ -62,10 +66,10 @@ class PublicCalendar extends Calendar {
 	}
 
 	/**
-	 * public calendars are always shared
-	 * @return bool
+	 * Public calendars are always shared
 	 */
-	public function isShared() {
+	#[\Override]
+	public function isShared(): bool {
 		return true;
 	}
 }

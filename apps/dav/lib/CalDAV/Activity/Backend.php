@@ -1,8 +1,10 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\CalDAV\Activity;
 
 use OCA\DAV\CalDAV\Activity\Provider\Calendar;
@@ -25,27 +27,13 @@ use Sabre\VObject\Reader;
  */
 class Backend {
 
-	/** @var IActivityManager */
-	protected $activityManager;
-
-	/** @var IGroupManager */
-	protected $groupManager;
-
-	/** @var IUserSession */
-	protected $userSession;
-
-	/** @var IAppManager */
-	protected $appManager;
-
-	/** @var IUserManager */
-	protected $userManager;
-
-	public function __construct(IActivityManager $activityManager, IGroupManager $groupManager, IUserSession $userSession, IAppManager $appManager, IUserManager $userManager) {
-		$this->activityManager = $activityManager;
-		$this->groupManager = $groupManager;
-		$this->userSession = $userSession;
-		$this->appManager = $appManager;
-		$this->userManager = $userManager;
+	public function __construct(
+		protected IActivityManager $activityManager,
+		protected IGroupManager $groupManager,
+		protected IUserSession $userSession,
+		protected IAppManager $appManager,
+		protected IUserManager $userManager,
+	) {
 	}
 
 	/**
@@ -477,7 +465,6 @@ class Backend {
 				$params['object']['link']['owner'] = $owner;
 			}
 
-
 			$event->setAffectedUser($user)
 				->setSubject(
 					$user === $currentUser ? $action . '_self' : $action,
@@ -538,7 +525,10 @@ class Backend {
 			->setType($object['type'] === 'event' ? 'calendar_event' : 'calendar_todo')
 			->setAuthor($currentUser);
 
-		$users = $this->getUsersForShares(array_intersect($sourceShares, $targetShares));
+		$users = array_intersect(
+			$this->getUsersForShares($sourceShares),
+			$this->getUsersForShares($targetShares),
+		);
 		$users[] = $targetOwner;
 
 		// Users for share can return the owner itself if the calendar is published
@@ -591,7 +581,7 @@ class Backend {
 		$vObject = Reader::read($objectData['calendardata']);
 		$component = $componentType = null;
 		foreach ($vObject->getComponents() as $component) {
-			if (in_array($component->name, ['VEVENT', 'VTODO'])) {
+			if (in_array($component->name, ['VEVENT', 'VTODO'], true)) {
 				$componentType = $component->name;
 				break;
 			}

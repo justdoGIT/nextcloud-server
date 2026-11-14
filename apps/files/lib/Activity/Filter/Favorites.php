@@ -1,8 +1,10 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Files\Activity\Filter;
 
 use OCA\Files\Activity\Helper;
@@ -15,21 +17,6 @@ use OCP\IURLGenerator;
 
 class Favorites implements IFilter {
 
-	/** @var IL10N */
-	protected $l;
-
-	/** @var IURLGenerator */
-	protected $url;
-
-	/** @var IManager */
-	protected $activityManager;
-
-	/** @var Helper */
-	protected $helper;
-
-	/** @var IDBConnection */
-	protected $db;
-
 	/**
 	 * @param IL10N $l
 	 * @param IURLGenerator $url
@@ -37,18 +24,20 @@ class Favorites implements IFilter {
 	 * @param Helper $helper
 	 * @param IDBConnection $db
 	 */
-	public function __construct(IL10N $l, IURLGenerator $url, IManager $activityManager, Helper $helper, IDBConnection $db) {
-		$this->l = $l;
-		$this->url = $url;
-		$this->activityManager = $activityManager;
-		$this->helper = $helper;
-		$this->db = $db;
+	public function __construct(
+		protected IL10N $l,
+		protected IURLGenerator $url,
+		protected IManager $activityManager,
+		protected Helper $helper,
+		protected IDBConnection $db,
+	) {
 	}
 
 	/**
 	 * @return string Lowercase a-z only identifier
 	 * @since 11.0.0
 	 */
+	#[\Override]
 	public function getIdentifier() {
 		return 'files_favorites';
 	}
@@ -57,6 +46,7 @@ class Favorites implements IFilter {
 	 * @return string A translated string
 	 * @since 11.0.0
 	 */
+	#[\Override]
 	public function getName() {
 		return $this->l->t('Favorites');
 	}
@@ -65,6 +55,7 @@ class Favorites implements IFilter {
 	 * @return int
 	 * @since 11.0.0
 	 */
+	#[\Override]
 	public function getPriority() {
 		return 10;
 	}
@@ -73,6 +64,7 @@ class Favorites implements IFilter {
 	 * @return string Full URL to an icon, empty string when none is given
 	 * @since 11.0.0
 	 */
+	#[\Override]
 	public function getIcon() {
 		return $this->url->getAbsoluteURL($this->url->imagePath('core', 'actions/star-dark.svg'));
 	}
@@ -82,6 +74,7 @@ class Favorites implements IFilter {
 	 * @return string[] An array of allowed apps from which activities should be displayed
 	 * @since 11.0.0
 	 */
+	#[\Override]
 	public function filterTypes(array $types) {
 		return array_intersect([
 			'file_created',
@@ -95,6 +88,7 @@ class Favorites implements IFilter {
 	 * @return string[] An array of allowed apps from which activities should be displayed
 	 * @since 11.0.0
 	 */
+	#[\Override]
 	public function allowedApps() {
 		return ['files'];
 	}

@@ -6,16 +6,18 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCP\SystemTag;
 
 use OCP\EventDispatcher\Event;
+use OCP\EventDispatcher\IWebhookCompatibleEvent;
 
 /**
  * Class MapperEvent
  *
  * @since 9.0.0
  */
-class MapperEvent extends Event {
+class MapperEvent extends Event implements IWebhookCompatibleEvent {
 	/**
 	 * @since 9.0.0
 	 * @deprecated 22.0.0
@@ -83,5 +85,19 @@ class MapperEvent extends Event {
 	 */
 	public function getTags(): array {
 		return $this->tags;
+	}
+
+	/**
+	 * @return array
+	 * @since 32.0.0
+	 */
+	#[\Override]
+	public function getWebhookSerializable(): array {
+		return [
+			'eventType' => $this->getEvent(),
+			'objectType' => $this->getObjectType(),
+			'objectId' => $this->getObjectId(),
+			'tagIds' => $this->getTags(),
+		];
 	}
 }

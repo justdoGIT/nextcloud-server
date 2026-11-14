@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2017 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\BackgroundJob;
 
 use OCA\DAV\CalDAV\BirthdayService;
@@ -15,21 +16,15 @@ use OCP\IConfig;
 
 class GenerateBirthdayCalendarBackgroundJob extends QueuedJob {
 
-	/** @var BirthdayService */
-	private $birthdayService;
-
-	/** @var IConfig */
-	private $config;
-
-	public function __construct(ITimeFactory $time,
-		BirthdayService $birthdayService,
-		IConfig $config) {
+	public function __construct(
+		ITimeFactory $time,
+		private BirthdayService $birthdayService,
+		private IConfig $config,
+	) {
 		parent::__construct($time);
-
-		$this->birthdayService = $birthdayService;
-		$this->config = $config;
 	}
 
+	#[\Override]
 	public function run($argument) {
 		$userId = $argument['userId'];
 		$purgeBeforeGenerating = $argument['purgeBeforeGenerating'] ?? false;

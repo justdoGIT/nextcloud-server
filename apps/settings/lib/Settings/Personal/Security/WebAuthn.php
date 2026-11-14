@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2020 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Settings\Settings\Personal\Security;
 
 use OC\Authentication\WebAuthn\Db\PublicKeyCredentialMapper;
@@ -17,39 +18,26 @@ use OCP\Settings\ISettings;
 
 class WebAuthn implements ISettings {
 
-	/** @var PublicKeyCredentialMapper */
-	private $mapper;
-
-	/** @var string */
-	private $uid;
-
-	/** @var IInitialStateService */
-	private $initialStateService;
-
-	/** @var Manager */
-	private $manager;
-
-	public function __construct(PublicKeyCredentialMapper $mapper,
-		string $UserId,
-		IInitialStateService $initialStateService,
-		Manager $manager) {
-		$this->mapper = $mapper;
-		$this->uid = $UserId;
-		$this->initialStateService = $initialStateService;
-		$this->manager = $manager;
+	public function __construct(
+		private PublicKeyCredentialMapper $mapper,
+		private string $userId,
+		private IInitialStateService $initialStateService,
+		private Manager $manager,
+	) {
 	}
 
+	#[\Override]
 	public function getForm() {
 		$this->initialStateService->provideInitialState(
 			Application::APP_ID,
 			'webauthn-devices',
-			$this->mapper->findAllForUid($this->uid)
+			$this->mapper->findAllForUid($this->userId)
 		);
 
-		return new TemplateResponse('settings', 'settings/personal/security/webauthn', [
-		]);
+		return new TemplateResponse('settings', 'settings/personal/security/webauthn');
 	}
 
+	#[\Override]
 	public function getSection(): ?string {
 		if (!$this->manager->isWebAuthnAvailable()) {
 			return null;
@@ -58,6 +46,7 @@ class WebAuthn implements ISettings {
 		return 'security';
 	}
 
+	#[\Override]
 	public function getPriority(): int {
 		return 20;
 	}

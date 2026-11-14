@@ -7,6 +7,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2016 ownCloud GmbH.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\AppInfo;
 
 use OC\ServerContainer;
@@ -14,7 +15,7 @@ use OCA\DAV\CalDAV\AppCalendar\AppCalendarPlugin;
 use OCA\DAV\CalDAV\Integration\ICalendarProvider;
 use OCA\DAV\CardDAV\Integration\IAddressBookProvider;
 use OCP\App\IAppManager;
-use OCP\AppFramework\QueryException;
+use Psr\Container\ContainerExceptionInterface;
 use Sabre\DAV\Collection;
 use Sabre\DAV\ServerPlugin;
 use function array_map;
@@ -26,16 +27,6 @@ use function is_array;
  * to the Sabre server.
  */
 class PluginManager {
-
-	/**
-	 * @var ServerContainer
-	 */
-	private $container;
-
-	/**
-	 * @var IAppManager
-	 */
-	private $appManager;
 
 	/**
 	 * App plugins
@@ -65,6 +56,9 @@ class PluginManager {
 	 */
 	private $calendarPlugins = [];
 
+	/** @var array<string, string> collection name => app id */
+	private array $collectionApps = [];
+
 	/** @var bool */
 	private $populated = false;
 
@@ -74,9 +68,10 @@ class PluginManager {
 	 * @param ServerContainer $container server container for resolving plugin classes
 	 * @param IAppManager $appManager app manager to loading apps and their info
 	 */
-	public function __construct(ServerContainer $container, IAppManager $appManager) {
-		$this->container = $container;
-		$this->appManager = $appManager;
+	public function __construct(
+		private ServerContainer $container,
+		private IAppManager $appManager,
+	) {
 	}
 
 	/**
@@ -97,6 +92,11 @@ class PluginManager {
 	public function getAppCollections() {
 		$this->populate();
 		return $this->collections;
+	}
+
+	public function getCollectionApp(string $name): ?string {
+		$this->populate();
+		return $this->collectionApps[$name] ?? null;
 	}
 
 	/**
@@ -128,7 +128,7 @@ class PluginManager {
 
 		$this->calendarPlugins[] = $this->container->get(AppCalendarPlugin::class);
 
-		foreach ($this->appManager->getInstalledApps() as $app) {
+		foreach ($this->appManager->getEnabledApps() as $app) {
 			// load plugins and collections from info.xml
 			$info = $this->appManager->getAppInfo($app);
 			if (!isset($info['types']) || !in_array('dav', $info['types'], true)) {
@@ -142,6 +142,7 @@ class PluginManager {
 			$collections = $this->loadSabreCollectionsFromInfoXml($this->extractCollectionList($info));
 			foreach ($collections as $collection) {
 				$this->collections[] = $collection;
+				$this->collectionApps[$collection->getName()] = $app;
 			}
 
 			$addresbookPlugins = $this->loadSabreAddressBookPluginsFromInfoXml($this->extractAddressBookPluginList($info));
@@ -238,7 +239,7 @@ class PluginManager {
 	private function createClass(string $className): object {
 		try {
 			return $this->container->get($className);
-		} catch (QueryException $e) {
+		} catch (ContainerExceptionInterface $e) {
 			if (class_exists($className)) {
 				return new $className();
 			}
@@ -246,7 +247,6 @@ class PluginManager {
 
 		throw new \Exception('Could not load ' . $className, 0, $e);
 	}
-
 
 	/**
 	 * @param string[] $classes

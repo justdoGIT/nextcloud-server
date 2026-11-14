@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2021 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCP\Files\Template;
 
 /**
@@ -13,7 +14,7 @@ namespace OCP\Files\Template;
  */
 final class TemplateFileCreator implements \JsonSerializable {
 	protected $appId;
-	/** @var string[] $mimetypes */
+	/** @var list<string> $mimetypes */
 	protected $mimetypes = [];
 	protected $actionName;
 	protected $fileExtension;
@@ -121,8 +122,9 @@ final class TemplateFileCreator implements \JsonSerializable {
 
 	/**
 	 * @since 21.0.0
-	 * @return array{app: string, label: string, extension: string, iconClass: ?string, iconSvgInline: ?string, mimetypes: string[], ratio: ?float, actionLabel: string}
+	 * @return array{app: string, label: string, extension: string, iconClass: ?string, iconSvgInline: ?string, mimetypes: list<string>, ratio: ?float, actionLabel: string}
 	 */
+	#[\Override]
 	public function jsonSerialize(): array {
 		return [
 			'app' => $this->appId,

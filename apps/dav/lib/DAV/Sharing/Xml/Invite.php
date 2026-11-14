@@ -6,6 +6,7 @@
  * SPDX-FileCopyrightText: fruux GmbH (https://fruux.com/)
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\DAV\Sharing\Xml;
 
 use OCA\DAV\DAV\Sharing\Plugin;
@@ -25,21 +26,6 @@ use Sabre\Xml\XmlSerializable;
  * @license http://sabre.io/license/ Modified BSD License
  */
 class Invite implements XmlSerializable {
-
-	/**
-	 * The list of users a calendar has been shared to.
-	 *
-	 * @var array
-	 */
-	protected $users;
-
-	/**
-	 * The organizer contains information about the person who shared the
-	 * object.
-	 *
-	 * @var array|null
-	 */
-	protected $organizer;
 
 	/**
 	 * Creates the property.
@@ -67,9 +53,17 @@ class Invite implements XmlSerializable {
 	 *
 	 * @param array $users
 	 */
-	public function __construct(array $users, ?array $organizer = null) {
-		$this->users = $users;
-		$this->organizer = $organizer;
+	public function __construct(
+		/**
+		 * The list of users a calendar has been shared to.
+		 */
+		protected array $users,
+		/**
+		 * The organizer contains information about the person who shared the
+		 * object.
+		 */
+		protected ?array $organizer = null,
+	) {
 	}
 
 	/**
@@ -100,6 +94,7 @@ class Invite implements XmlSerializable {
 	 * @param Writer $writer
 	 * @return void
 	 */
+	#[\Override]
 	public function xmlSerialize(Writer $writer) {
 		$cs = '{' . Plugin::NS_OWNCLOUD . '}';
 

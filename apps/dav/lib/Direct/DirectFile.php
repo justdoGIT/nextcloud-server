@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2018 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Direct;
 
 use OCA\DAV\Db\Direct;
@@ -18,27 +19,22 @@ use Sabre\DAV\Exception\NotFound;
 use Sabre\DAV\IFile;
 
 class DirectFile implements IFile {
-	/** @var Direct */
-	private $direct;
-
-	/** @var IRootFolder */
-	private $rootFolder;
-
 	/** @var File */
 	private $file;
 
-	private $eventDispatcher;
-
-	public function __construct(Direct $direct, IRootFolder $rootFolder, IEventDispatcher $eventDispatcher) {
-		$this->direct = $direct;
-		$this->rootFolder = $rootFolder;
-		$this->eventDispatcher = $eventDispatcher;
+	public function __construct(
+		private Direct $direct,
+		private IRootFolder $rootFolder,
+		private IEventDispatcher $eventDispatcher,
+	) {
 	}
 
+	#[\Override]
 	public function put($data) {
 		throw new Forbidden();
 	}
 
+	#[\Override]
 	public function get() {
 		$this->getFile();
 
@@ -47,12 +43,14 @@ class DirectFile implements IFile {
 		return $this->file->fopen('rb');
 	}
 
+	#[\Override]
 	public function getContentType() {
 		$this->getFile();
 
 		return $this->file->getMimeType();
 	}
 
+	#[\Override]
 	public function getETag() {
 		$this->getFile();
 
@@ -63,24 +61,29 @@ class DirectFile implements IFile {
 	 * @psalm-suppress ImplementedReturnTypeMismatch \Sabre\DAV\IFile::getSize signature does not support 32bit
 	 * @return int|float
 	 */
+	#[\Override]
 	public function getSize() {
 		$this->getFile();
 
 		return $this->file->getSize();
 	}
 
+	#[\Override]
 	public function delete() {
 		throw new Forbidden();
 	}
 
+	#[\Override]
 	public function getName() {
 		return $this->direct->getToken();
 	}
 
+	#[\Override]
 	public function setName($name) {
 		throw new Forbidden();
 	}
 
+	#[\Override]
 	public function getLastModified() {
 		$this->getFile();
 

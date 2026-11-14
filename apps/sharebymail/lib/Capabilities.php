@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2017 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\ShareByMail;
 
 use OCA\ShareByMail\Settings\SettingsManager;
@@ -15,26 +16,16 @@ use OCP\Share\IManager;
 
 class Capabilities implements ICapability {
 
-	/** @var IManager */
-	private $manager;
-
-	/** @var SettingsManager */
-	private $settingsManager;
-
-	/** @var IAppManager */
-	private $appManager;
-
-	public function __construct(IManager $manager,
-		SettingsManager $settingsManager,
-		IAppManager $appManager) {
-		$this->manager = $manager;
-		$this->settingsManager = $settingsManager;
-		$this->appManager = $appManager;
+	public function __construct(
+		private IManager $manager,
+		private SettingsManager $settingsManager,
+		private IAppManager $appManager,
+	) {
 	}
 
 	/**
 	 * @return array{
-	 *     files_sharing: array{
+	 *     files_sharing?: array{
 	 *         sharebymail: array{
 	 *             enabled: bool,
 	 *             send_password_by_mail: bool,
@@ -51,31 +42,31 @@ class Capabilities implements ICapability {
 	 *             },
 	 *         }
 	 *     }
-	 * }|array<empty>
+	 * }
 	 */
+	#[\Override]
 	public function getCapabilities(): array {
 		if (!$this->appManager->isEnabledForUser('files_sharing')) {
 			return [];
 		}
 		return [
-			'files_sharing' =>
-				[
-					'sharebymail' =>
-						[
-							'enabled' => $this->manager->shareApiAllowLinks(),
-							'send_password_by_mail' => $this->settingsManager->sendPasswordByMail(),
-							'upload_files_drop' => [
-								'enabled' => true,
-							],
-							'password' => [
-								'enabled' => true,
-								'enforced' => $this->manager->shareApiLinkEnforcePassword(),
-							],
-							'expire_date' => [
-								'enabled' => true,
-								'enforced' => $this->manager->shareApiLinkDefaultExpireDateEnforced(),
-							],
-						]
+			'files_sharing'
+				=> [
+					'sharebymail' => [
+						'enabled' => $this->manager->shareApiAllowLinks(),
+						'send_password_by_mail' => $this->settingsManager->sendPasswordByMail(),
+						'upload_files_drop' => [
+							'enabled' => true,
+						],
+						'password' => [
+							'enabled' => true,
+							'enforced' => $this->manager->shareApiLinkEnforcePassword(),
+						],
+						'expire_date' => [
+							'enabled' => true,
+							'enforced' => $this->manager->shareApiLinkDefaultExpireDateEnforced(),
+						],
+					]
 				]
 		];
 	}

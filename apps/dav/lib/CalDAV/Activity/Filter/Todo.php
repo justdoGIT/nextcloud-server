@@ -1,8 +1,12 @@
 <?php
+
+declare(strict_types=1);
+
 /**
  * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\CalDAV\Activity\Filter;
 
 use OCP\Activity\IFilter;
@@ -11,21 +15,17 @@ use OCP\IURLGenerator;
 
 class Todo implements IFilter {
 
-	/** @var IL10N */
-	protected $l;
-
-	/** @var IURLGenerator */
-	protected $url;
-
-	public function __construct(IL10N $l, IURLGenerator $url) {
-		$this->l = $l;
-		$this->url = $url;
+	public function __construct(
+		protected IL10N $l,
+		protected IURLGenerator $url,
+	) {
 	}
 
 	/**
 	 * @return string Lowercase a-z and underscore only identifier
 	 * @since 11.0.0
 	 */
+	#[\Override]
 	public function getIdentifier() {
 		return 'calendar_todo';
 	}
@@ -34,6 +34,7 @@ class Todo implements IFilter {
 	 * @return string A translated string
 	 * @since 11.0.0
 	 */
+	#[\Override]
 	public function getName() {
 		return $this->l->t('Tasks');
 	}
@@ -44,6 +45,7 @@ class Todo implements IFilter {
 	 *             priority values. It is required to return a value between 0 and 100.
 	 * @since 11.0.0
 	 */
+	#[\Override]
 	public function getPriority() {
 		return 40;
 	}
@@ -52,6 +54,7 @@ class Todo implements IFilter {
 	 * @return string Full URL to an icon, empty string when none is given
 	 * @since 11.0.0
 	 */
+	#[\Override]
 	public function getIcon() {
 		return $this->url->getAbsoluteURL($this->url->imagePath('core', 'actions/checkmark.svg'));
 	}
@@ -61,6 +64,7 @@ class Todo implements IFilter {
 	 * @return string[] An array of allowed apps from which activities should be displayed
 	 * @since 11.0.0
 	 */
+	#[\Override]
 	public function filterTypes(array $types) {
 		return array_intersect(['calendar_todo'], $types);
 	}
@@ -69,6 +73,7 @@ class Todo implements IFilter {
 	 * @return string[] An array of allowed apps from which activities should be displayed
 	 * @since 11.0.0
 	 */
+	#[\Override]
 	public function allowedApps() {
 		return [];
 	}

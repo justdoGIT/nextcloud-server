@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2019 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\WorkflowEngine\Command;
 
 use OCA\WorkflowEngine\Helper\ScopeContext;
@@ -18,14 +19,13 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 class Index extends Command {
 
-	/** @var Manager */
-	private $manager;
-
-	public function __construct(Manager $manager) {
-		$this->manager = $manager;
+	public function __construct(
+		private Manager $manager,
+	) {
 		parent::__construct();
 	}
 
+	#[\Override]
 	protected function configure() {
 		$this
 			->setName('workflows:list')
@@ -45,13 +45,14 @@ class Index extends Command {
 	}
 
 	protected function mappedScope(string $scope): int {
-		static $scopes = [
+		return match($scope) {
 			'admin' => IManager::SCOPE_ADMIN,
 			'user' => IManager::SCOPE_USER,
-		];
-		return $scopes[$scope] ?? -1;
+			default => -1,
+		};
 	}
 
+	#[\Override]
 	protected function execute(InputInterface $input, OutputInterface $output): int {
 		$ops = $this->manager->getAllOperations(
 			new ScopeContext(

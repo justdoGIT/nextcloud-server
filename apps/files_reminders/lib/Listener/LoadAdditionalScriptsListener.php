@@ -15,23 +15,29 @@ use OCP\App\IAppManager;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 use OCP\Util;
+use Psr\Log\LoggerInterface;
 
 /** @template-implements IEventListener<LoadAdditionalScriptsEvent> */
 class LoadAdditionalScriptsListener implements IEventListener {
 	public function __construct(
 		private IAppManager $appManager,
+		private LoggerInterface $logger,
 	) {
 	}
 
+	#[\Override]
 	public function handle(Event $event): void {
 		if (!($event instanceof LoadAdditionalScriptsEvent)) {
 			return;
 		}
 
-		if (!$this->appManager->isEnabledForUser('notifications')) {
+		if (!$this->appManager->isEnabledForUser(Application::APP_ID)
+			|| !$this->appManager->isEnabledForUser('notifications')
+		) {
 			return;
 		}
 
+		Util::addStyle(Application::APP_ID, 'init');
 		Util::addInitScript(Application::APP_ID, 'init');
 	}
 }

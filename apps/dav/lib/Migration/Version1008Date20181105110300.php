@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2018 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Migration;
 
 use Closure;
@@ -17,16 +18,14 @@ use OCP\Migration\SimpleMigrationStep;
 
 class Version1008Date20181105110300 extends SimpleMigrationStep {
 
-	/** @var IDBConnection */
-	private $connection;
-
 	/**
 	 * Version1008Date20181105110300 constructor.
 	 *
 	 * @param IDBConnection $connection
 	 */
-	public function __construct(IDBConnection $connection) {
-		$this->connection = $connection;
+	public function __construct(
+		private IDBConnection $connection,
+	) {
 	}
 
 	/**
@@ -35,6 +34,7 @@ class Version1008Date20181105110300 extends SimpleMigrationStep {
 	 * @param array $options
 	 * @return null|ISchemaWrapper
 	 */
+	#[\Override]
 	public function changeSchema(IOutput $output, Closure $schemaClosure, array $options) {
 		/** @var ISchemaWrapper $schema */
 		$schema = $schemaClosure();
@@ -52,10 +52,11 @@ class Version1008Date20181105110300 extends SimpleMigrationStep {
 	 * @param Closure $schemaClosure The `\Closure` returns a `ISchemaWrapper`
 	 * @param array $options
 	 */
+	#[\Override]
 	public function postSchemaChange(IOutput $output, Closure $schemaClosure, array $options) {
 		$qb = $this->connection->getQueryBuilder();
 		$qb->update('calendarsubscriptions')
 			->set('source', 'source_copy')
-			->execute();
+			->executeStatement();
 	}
 }

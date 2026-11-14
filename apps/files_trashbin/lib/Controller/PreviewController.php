@@ -6,13 +6,17 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Files_Trashbin\Controller;
 
+use NCU\AppFramework\Http\Attribute\TokenScope;
+use OCA\Files\TokenScopes;
 use OCA\Files_Trashbin\Trash\ITrashManager;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
+use OCP\AppFramework\Http\Attribute\OpenAPI;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\Http\FileDisplayResponse;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -24,43 +28,20 @@ use OCP\IPreview;
 use OCP\IRequest;
 use OCP\IUserSession;
 
+#[OpenAPI(scope: OpenAPI::SCOPE_DEFAULT)]
+#[TokenScope(scope: TokenScopes::FILES_READ)]
 class PreviewController extends Controller {
-	/** @var IRootFolder */
-	private $rootFolder;
-
-	/** @var ITrashManager */
-	private $trashManager;
-
-	/** @var IUserSession */
-	private $userSession;
-
-	/** @var IMimeTypeDetector */
-	private $mimeTypeDetector;
-
-	/** @var IPreview */
-	private $previewManager;
-
-	/** @var ITimeFactory */
-	private $time;
-
 	public function __construct(
 		string $appName,
 		IRequest $request,
-		IRootFolder $rootFolder,
-		ITrashManager $trashManager,
-		IUserSession $userSession,
-		IMimeTypeDetector $mimeTypeDetector,
-		IPreview $previewManager,
-		ITimeFactory $time,
+		private IRootFolder $rootFolder,
+		private ITrashManager $trashManager,
+		private IUserSession $userSession,
+		private IMimeTypeDetector $mimeTypeDetector,
+		private IPreview $previewManager,
+		private ITimeFactory $time,
 	) {
 		parent::__construct($appName, $request);
-
-		$this->trashManager = $trashManager;
-		$this->rootFolder = $rootFolder;
-		$this->userSession = $userSession;
-		$this->mimeTypeDetector = $mimeTypeDetector;
-		$this->previewManager = $previewManager;
-		$this->time = $time;
 	}
 
 	/**
@@ -71,7 +52,7 @@ class PreviewController extends Controller {
 	 * @param int $y Height of the preview
 	 * @param bool $a Whether to not crop the preview
 	 *
-	 * @return Http\FileDisplayResponse<Http::STATUS_OK, array{Content-Type: string}>|DataResponse<Http::STATUS_BAD_REQUEST|Http::STATUS_NOT_FOUND, array<empty>, array{}>
+	 * @return Http\FileDisplayResponse<Http::STATUS_OK, array{Content-Type: string}>|DataResponse<Http::STATUS_BAD_REQUEST|Http::STATUS_NOT_FOUND, list<empty>, array{}>
 	 *
 	 * 200: Preview returned
 	 * 400: Getting preview is not possible

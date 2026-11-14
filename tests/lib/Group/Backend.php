@@ -1,4 +1,5 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2018-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
@@ -9,9 +10,8 @@ namespace Test\Group;
 
 /**
  * Class Backend
- *
- * @group DB
  */
+#[\PHPUnit\Framework\Attributes\Group('DB')]
 abstract class Backend extends \Test\TestCase {
 	/**
 	 * @var \OC\Group\Backend $backend
@@ -103,14 +103,14 @@ abstract class Backend extends \Test\TestCase {
 
 	public function testSearchGroups(): void {
 		$name1 = $this->getGroupName('foobarbaz');
-		$name2 = $this->getGroupName('bazbarfoo');
+		$name2 = $this->getGroupName('bazfoobarfoo');
 		$name3 = $this->getGroupName('notme');
 
 		$this->backend->createGroup($name1);
 		$this->backend->createGroup($name2);
 		$this->backend->createGroup($name3);
 
-		$result = $this->backend->getGroups('bar');
+		$result = $this->backend->getGroups('foobar');
 		$this->assertSame(2, count($result));
 	}
 

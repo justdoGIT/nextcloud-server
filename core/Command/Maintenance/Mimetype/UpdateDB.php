@@ -5,13 +5,13 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OC\Core\Command\Maintenance\Mimetype;
 
 use OCP\Files\IMimeTypeDetector;
 use OCP\Files\IMimeTypeLoader;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
-
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
@@ -25,6 +25,7 @@ class UpdateDB extends Command {
 		parent::__construct();
 	}
 
+	#[\Override]
 	protected function configure() {
 		$this
 			->setName('maintenance:mimetype:update-db')
@@ -38,6 +39,7 @@ class UpdateDB extends Command {
 		;
 	}
 
+	#[\Override]
 	protected function execute(InputInterface $input, OutputInterface $output): int {
 		$mappings = $this->mimetypeDetector->getAllMappings();
 
@@ -45,6 +47,10 @@ class UpdateDB extends Command {
 		$totalNewMimetypes = 0;
 
 		foreach ($mappings as $ext => $mimetypes) {
+			// Single digit extensions will be treated as integers
+			// Let's make sure they are strings
+			// https://github.com/nextcloud/server/issues/42902
+			$ext = (string)$ext;
 			if ($ext[0] === '_') {
 				// comment
 				continue;

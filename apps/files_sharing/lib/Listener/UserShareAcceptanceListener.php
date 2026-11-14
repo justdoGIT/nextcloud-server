@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2019 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Files_Sharing\Listener;
 
 use OCA\Files_Sharing\AppInfo\Application;
@@ -20,19 +21,14 @@ use OCP\Share\IShare;
 /** @template-implements IEventListener<ShareCreatedEvent> */
 class UserShareAcceptanceListener implements IEventListener {
 
-	/** @var IConfig */
-	private $config;
-	/** @var IManager */
-	private $shareManager;
-	/** @var IGroupManager */
-	private $groupManager;
-
-	public function __construct(IConfig $config, IManager $shareManager, IGroupManager $groupManager) {
-		$this->config = $config;
-		$this->shareManager = $shareManager;
-		$this->groupManager = $groupManager;
+	public function __construct(
+		private IConfig $config,
+		private IManager $shareManager,
+		private IGroupManager $groupManager,
+	) {
 	}
 
+	#[\Override]
 	public function handle(Event $event): void {
 		if (!($event instanceof ShareCreatedEvent)) {
 			return;

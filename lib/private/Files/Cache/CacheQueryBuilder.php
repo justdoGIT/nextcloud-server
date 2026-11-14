@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2019 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OC\Files\Cache;
 
 use OC\DB\QueryBuilder\ExtendedQueryBuilder;
@@ -28,9 +29,9 @@ class CacheQueryBuilder extends ExtendedQueryBuilder {
 
 	public function selectTagUsage(): self {
 		$this
-			->select('systemtag.name', 'systemtag.id', 'systemtag.visibility', 'systemtag.editable')
-			->selectAlias($this->createFunction('COUNT(filecache.fileid)'), 'number_files')
-			->selectAlias($this->createFunction('MAX(filecache.fileid)'), 'ref_file_id')
+			->select('systemtag.name', 'systemtag.id', 'systemtag.visibility', 'systemtag.editable', 'systemtag.etag', 'systemtag.color')
+			->selectAlias($this->func()->count('filecache.fileid'), 'number_files')
+			->selectAlias($this->func()->max('filecache.fileid'), 'ref_file_id')
 			->from('filecache', 'filecache')
 			->leftJoin('filecache', 'systemtag_object_mapping', 'systemtagmap', $this->expr()->andX(
 				$this->expr()->eq('filecache.fileid', $this->expr()->castColumn('systemtagmap.objectid', IQueryBuilder::PARAM_INT)),
@@ -48,7 +49,7 @@ class CacheQueryBuilder extends ExtendedQueryBuilder {
 	public function selectFileCache(?string $alias = null, bool $joinExtendedCache = true) {
 		$name = $alias ?: 'filecache';
 		$this->select("$name.fileid", 'storage', 'path', 'path_hash', "$name.parent", "$name.name", 'mimetype', 'mimepart', 'size', 'mtime',
-			'storage_mtime', 'encrypted', 'etag', "$name.permissions", 'checksum', 'unencrypted_size')
+			'storage_mtime', 'encrypted', "$name.etag", "$name.permissions", 'checksum', 'unencrypted_size')
 			->from('filecache', $name);
 
 		if ($joinExtendedCache) {

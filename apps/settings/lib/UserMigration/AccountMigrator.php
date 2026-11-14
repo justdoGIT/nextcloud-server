@@ -30,44 +30,29 @@ use Throwable;
 
 class AccountMigrator implements IMigrator, ISizeEstimationMigrator {
 	use TMigratorBasicVersionHandling;
-
 	use TAccountsHelper;
 
-	private IAccountManager $accountManager;
+	private const string PATH_ROOT = Application::APP_ID . '/';
 
-	private IAvatarManager $avatarManager;
+	private const string PATH_ACCOUNT_FILE = AccountMigrator::PATH_ROOT . 'account.json';
 
-	private ProfileManager $profileManager;
+	private const string AVATAR_BASENAME = 'avatar';
 
-	private ProfileConfigMapper $configMapper;
-
-	private IL10N $l10n;
-
-	private const PATH_ROOT = Application::APP_ID . '/';
-
-	private const PATH_ACCOUNT_FILE = AccountMigrator::PATH_ROOT . 'account.json';
-
-	private const AVATAR_BASENAME = 'avatar';
-
-	private const PATH_CONFIG_FILE = AccountMigrator::PATH_ROOT . 'config.json';
+	private const string PATH_CONFIG_FILE = AccountMigrator::PATH_ROOT . 'config.json';
 
 	public function __construct(
-		IAccountManager $accountManager,
-		IAvatarManager $avatarManager,
-		ProfileManager $profileManager,
-		ProfileConfigMapper $configMapper,
-		IL10N $l10n,
+		private IAccountManager $accountManager,
+		private IAvatarManager $avatarManager,
+		private ProfileManager $profileManager,
+		private ProfileConfigMapper $configMapper,
+		private IL10N $l10n,
 	) {
-		$this->accountManager = $accountManager;
-		$this->avatarManager = $avatarManager;
-		$this->profileManager = $profileManager;
-		$this->configMapper = $configMapper;
-		$this->l10n = $l10n;
 	}
 
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function getEstimatedExportSize(IUser $user): int|float {
 		$size = 100; // 100KiB for account JSON
 
@@ -87,6 +72,7 @@ class AccountMigrator implements IMigrator, ISizeEstimationMigrator {
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function export(IUser $user, IExportDestination $exportDestination, OutputInterface $output): void {
 		$output->writeln('Exporting account information in ' . AccountMigrator::PATH_ACCOUNT_FILE . '…');
 
@@ -122,6 +108,7 @@ class AccountMigrator implements IMigrator, ISizeEstimationMigrator {
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function import(IUser $user, IImportSource $importSource, OutputInterface $output): void {
 		if ($importSource->getMigratorVersion($this->getId()) === null) {
 			$output->writeln('No version for ' . static::class . ', skipping import…');
@@ -187,6 +174,7 @@ class AccountMigrator implements IMigrator, ISizeEstimationMigrator {
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function getId(): string {
 		return 'account';
 	}
@@ -194,6 +182,7 @@ class AccountMigrator implements IMigrator, ISizeEstimationMigrator {
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function getDisplayName(): string {
 		return $this->l10n->t('Profile information');
 	}
@@ -201,6 +190,7 @@ class AccountMigrator implements IMigrator, ISizeEstimationMigrator {
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function getDescription(): string {
 		return $this->l10n->t('Profile picture, full name, email, phone number, address, website, Twitter, organisation, role, headline, biography, and whether your profile is enabled');
 	}

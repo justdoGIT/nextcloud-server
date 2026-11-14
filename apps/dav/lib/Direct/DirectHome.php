@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2018 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Direct;
 
 use OCA\DAV\Db\DirectMapper;
@@ -22,48 +23,27 @@ use Sabre\DAV\ICollection;
 
 class DirectHome implements ICollection {
 
-	/** @var IRootFolder */
-	private $rootFolder;
-
-	/** @var DirectMapper */
-	private $mapper;
-
-	/** @var ITimeFactory */
-	private $timeFactory;
-
-	/** @var IThrottler */
-	private $throttler;
-
-	/** @var IRequest */
-	private $request;
-
-	/** @var IEventDispatcher */
-	private $eventDispatcher;
-
 	public function __construct(
-		IRootFolder $rootFolder,
-		DirectMapper $mapper,
-		ITimeFactory $timeFactory,
-		IThrottler $throttler,
-		IRequest $request,
-		IEventDispatcher $eventDispatcher,
+		private IRootFolder $rootFolder,
+		private DirectMapper $mapper,
+		private ITimeFactory $timeFactory,
+		private IThrottler $throttler,
+		private IRequest $request,
+		private IEventDispatcher $eventDispatcher,
 	) {
-		$this->rootFolder = $rootFolder;
-		$this->mapper = $mapper;
-		$this->timeFactory = $timeFactory;
-		$this->throttler = $throttler;
-		$this->request = $request;
-		$this->eventDispatcher = $eventDispatcher;
 	}
 
+	#[\Override]
 	public function createFile($name, $data = null) {
 		throw new Forbidden();
 	}
 
+	#[\Override]
 	public function createDirectory($name) {
 		throw new Forbidden();
 	}
 
+	#[\Override]
 	public function getChild($name): DirectFile {
 		try {
 			$direct = $this->mapper->getByToken($name);
@@ -77,32 +57,38 @@ class DirectHome implements ICollection {
 		} catch (DoesNotExistException $e) {
 			// Since the token space is so huge only throttle on non-existing token
 			$this->throttler->registerAttempt('directlink', $this->request->getRemoteAddress());
-			$this->throttler->sleepDelay($this->request->getRemoteAddress(), 'directlink');
+			$this->throttler->sleepDelayOrThrowOnMax($this->request->getRemoteAddress(), 'directlink');
 
 			throw new NotFound();
 		}
 	}
 
+	#[\Override]
 	public function getChildren() {
 		throw new MethodNotAllowed('Listing members of this collection is disabled');
 	}
 
+	#[\Override]
 	public function childExists($name): bool {
 		return false;
 	}
 
+	#[\Override]
 	public function delete() {
 		throw new Forbidden();
 	}
 
+	#[\Override]
 	public function getName(): string {
 		return 'direct';
 	}
 
+	#[\Override]
 	public function setName($name) {
 		throw new Forbidden();
 	}
 
+	#[\Override]
 	public function getLastModified(): int {
 		return 0;
 	}

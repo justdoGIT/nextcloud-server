@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2019 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\WorkflowEngine\Entity;
 
 use OC\Files\Config\UserMountCache;
@@ -21,7 +22,6 @@ use OCP\IURLGenerator;
 use OCP\IUser;
 use OCP\IUserManager;
 use OCP\IUserSession;
-use OCP\SystemTag\ISystemTag;
 use OCP\SystemTag\ISystemTagManager;
 use OCP\SystemTag\MapperEvent;
 use OCP\WorkflowEngine\EntityContext\IContextPortation;
@@ -33,61 +33,35 @@ use OCP\WorkflowEngine\IEntity;
 use OCP\WorkflowEngine\IRuleMatcher;
 
 class File implements IEntity, IDisplayText, IUrl, IIcon, IContextPortation {
-	private const EVENT_NAMESPACE = '\OCP\Files::';
-
-	/** @var IL10N */
-	protected $l10n;
-	/** @var IURLGenerator */
-	protected $urlGenerator;
-	/** @var IRootFolder */
-	protected $root;
-	/** @var string */
-	protected $eventName;
-	/** @var Event */
-	protected $event;
-	/** @var IUserSession */
-	private $userSession;
-	/** @var ISystemTagManager */
-	private $tagManager;
-	/** @var ?Node */
-	private $node;
-	/** @var ?IUser */
-	private $actingUser = null;
-	/** @var IUserManager */
-	private $userManager;
-	/** @var UserMountCache */
-	private $userMountCache;
-	/** @var IMountManager */
-	private $mountManager;
+	private const string EVENT_NAMESPACE = '\OCP\Files::';
+	protected ?string $eventName = null;
+	protected ?Event $event = null;
+	private ?Node $node = null;
+	private ?IUser $actingUser = null;
 
 	public function __construct(
-		IL10N $l10n,
-		IURLGenerator $urlGenerator,
-		IRootFolder $root,
-		IUserSession $userSession,
-		ISystemTagManager $tagManager,
-		IUserManager $userManager,
-		UserMountCache $userMountCache,
-		IMountManager $mountManager,
+		protected IL10N $l10n,
+		protected IURLGenerator $urlGenerator,
+		protected IRootFolder $root,
+		private IUserSession $userSession,
+		private ISystemTagManager $tagManager,
+		private IUserManager $userManager,
+		private UserMountCache $userMountCache,
+		private IMountManager $mountManager,
 	) {
-		$this->l10n = $l10n;
-		$this->urlGenerator = $urlGenerator;
-		$this->root = $root;
-		$this->userSession = $userSession;
-		$this->tagManager = $tagManager;
-		$this->userManager = $userManager;
-		$this->userMountCache = $userMountCache;
-		$this->mountManager = $mountManager;
 	}
 
+	#[\Override]
 	public function getName(): string {
 		return $this->l10n->t('File');
 	}
 
+	#[\Override]
 	public function getIcon(): string {
 		return $this->urlGenerator->imagePath('core', 'categories/files.svg');
 	}
 
+	#[\Override]
 	public function getEvents(): array {
 		return [
 			new GenericEntityEvent($this->l10n->t('File created'), self::EVENT_NAMESPACE . 'postCreate'),
@@ -100,6 +74,7 @@ class File implements IEntity, IDisplayText, IUrl, IIcon, IContextPortation {
 		];
 	}
 
+	#[\Override]
 	public function prepareRuleMatcher(IRuleMatcher $ruleMatcher, string $eventName, Event $event): void {
 		if (!$event instanceof GenericEvent && !$event instanceof MapperEvent) {
 			return;
@@ -116,6 +91,7 @@ class File implements IEntity, IDisplayText, IUrl, IIcon, IContextPortation {
 		}
 	}
 
+	#[\Override]
 	public function isLegitimatedForUserId(string $userId): bool {
 		try {
 			$node = $this->getNode();
@@ -166,9 +142,8 @@ class File implements IEntity, IDisplayText, IUrl, IIcon, IContextPortation {
 				if (!$this->event instanceof MapperEvent || $this->event->getObjectType() !== 'files') {
 					throw new NotFoundException();
 				}
-				$nodes = $this->root->getById((int)$this->event->getObjectId());
-				if (is_array($nodes) && isset($nodes[0])) {
-					$this->node = $nodes[0];
+				$this->node = $this->root->getFirstNodeById((int)$this->event->getObjectId());
+				if ($this->node !== null) {
 					return $this->node;
 				}
 				break;
@@ -176,6 +151,7 @@ class File implements IEntity, IDisplayText, IUrl, IIcon, IContextPortation {
 		throw new NotFoundException();
 	}
 
+	#[\Override]
 	public function getDisplayText(int $verbosity = 0): string {
 		try {
 			$node = $this->getNode();
@@ -207,7 +183,6 @@ class File implements IEntity, IDisplayText, IUrl, IIcon, IContextPortation {
 					$tagIDs = $this->event->getTags();
 					$tagObjects = $this->tagManager->getTagsByIds($tagIDs);
 					foreach ($tagObjects as $systemTag) {
-						/** @var ISystemTag $systemTag */
 						if ($systemTag->isUserVisible()) {
 							$tagNames[] = $systemTag->getName();
 						}
@@ -219,16 +194,17 @@ class File implements IEntity, IDisplayText, IUrl, IIcon, IContextPortation {
 					return '';
 				}
 				array_push($options, $tagString, $filename);
-				return $this->l10n->t('%s assigned %s to %s', $options);
+				return $this->l10n->t('%1$s assigned %2$s to %3$s', $options);
+			default:
+				return '';
 		}
 	}
 
+	#[\Override]
 	public function getUrl(): string {
 		try {
 			return $this->urlGenerator->linkToRouteAbsolute('files.viewcontroller.showFile', ['fileid' => $this->getNode()->getId()]);
-		} catch (InvalidPathException $e) {
-			return '';
-		} catch (NotFoundException $e) {
+		} catch (InvalidPathException|NotFoundException) {
 			return '';
 		}
 	}
@@ -236,6 +212,7 @@ class File implements IEntity, IDisplayText, IUrl, IIcon, IContextPortation {
 	/**
 	 * @inheritDoc
 	 */
+	#[\Override]
 	public function exportContextIDs(): array {
 		$nodeOwner = $this->getNode()->getOwner();
 		$actingUserId = null;
@@ -255,15 +232,16 @@ class File implements IEntity, IDisplayText, IUrl, IIcon, IContextPortation {
 	/**
 	 * @inheritDoc
 	 */
+	#[\Override]
 	public function importContextIDs(array $contextIDs): void {
 		$this->eventName = $contextIDs['eventName'];
 		if ($contextIDs['nodeOwnerId'] !== null) {
 			$userFolder = $this->root->getUserFolder($contextIDs['nodeOwnerId']);
-			$nodes = $userFolder->getById($contextIDs['nodeId']);
+			$node = $userFolder->getFirstNodeById($contextIDs['nodeId']);
 		} else {
-			$nodes = $this->root->getById($contextIDs['nodeId']);
+			$node = $this->root->getFirstNodeById($contextIDs['nodeId']);
 		}
-		$this->node = $nodes[0] ?? null;
+		$this->node = $node;
 		if ($contextIDs['actingUserId']) {
 			$this->actingUser = $this->userManager->get($contextIDs['actingUserId']);
 		}
@@ -272,6 +250,7 @@ class File implements IEntity, IDisplayText, IUrl, IIcon, IContextPortation {
 	/**
 	 * @inheritDoc
 	 */
+	#[\Override]
 	public function getIconUrl(): string {
 		return $this->getIcon();
 	}

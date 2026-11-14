@@ -4,14 +4,14 @@
  */
 
 import { getRootUrl } from '@nextcloud/router'
-import logger from './logger'
+import { logger } from './utils/logger.ts'
 
 window.addEventListener('DOMContentLoaded', async () => {
 	// When the page is loaded send GET to the cron endpoint to trigger background jobs
 	try {
 		logger.debug('Running web cron')
 		await window.fetch(`${getRootUrl()}/cron.php`)
-		logger.debug('Web cron successfull')
+		logger.debug('Web cron successful')
 	} catch (e) {
 		logger.debug('Running web cron failed', { error: e })
 	}

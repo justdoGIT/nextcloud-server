@@ -9,10 +9,12 @@ declare(strict_types=1);
 
 namespace OCA\DAV\Controller;
 
+use NCU\AppFramework\Http\Attribute\TokenScope;
 use OCA\DAV\AppInfo\Application;
 use OCA\DAV\CalDAV\UpcomingEvent;
 use OCA\DAV\CalDAV\UpcomingEventsService;
 use OCA\DAV\ResponseDefinitions;
+use OCA\DAV\TokenScopes;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\DataResponse;
@@ -23,39 +25,35 @@ use OCP\IRequest;
  * @psalm-import-type DAVUpcomingEvent from ResponseDefinitions
  */
 class UpcomingEventsController extends OCSController {
-	private ?string $userId;
-	private UpcomingEventsService $service;
-
 	public function __construct(
 		IRequest $request,
-		?string $userId,
-		UpcomingEventsService $service) {
+		private ?string $userId,
+		private UpcomingEventsService $service,
+	) {
 		parent::__construct(Application::APP_ID, $request);
-
-		$this->userId = $userId;
-		$this->service = $service;
 	}
 
 	/**
 	 * Get information about upcoming events
 	 *
 	 * @param string|null $location location/URL to filter by
-	 * @return DataResponse<Http::STATUS_OK, array{events: DAVUpcomingEvent[]}, array{}>|DataResponse<Http::STATUS_UNAUTHORIZED, null, array{}>
+	 * @return DataResponse<Http::STATUS_OK, array{events: list<DAVUpcomingEvent>}, array{}>|DataResponse<Http::STATUS_UNAUTHORIZED, null, array{}>
 	 *
 	 * 200: Upcoming events
 	 * 401: When not authenticated
 	 */
 	#[NoAdminRequired]
+	#[TokenScope(scope: TokenScopes::CALENDAR_READ)]
 	public function getEvents(?string $location = null): DataResponse {
 		if ($this->userId === null) {
 			return new DataResponse(null, Http::STATUS_UNAUTHORIZED);
 		}
 
 		return new DataResponse([
-			'events' => array_map(fn (UpcomingEvent $e) => $e->jsonSerialize(), $this->service->getEvents(
+			'events' => array_values(array_map(fn (UpcomingEvent $e) => $e->jsonSerialize(), $this->service->getEvents(
 				$this->userId,
 				$location,
-			)),
+			))),
 		]);
 	}
 

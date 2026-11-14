@@ -32,8 +32,18 @@ abstract class Field implements \JsonSerializable {
 	abstract public function setValue(mixed $value): void;
 
 	/**
+	 * @return array{
+	 *     index: string,
+	 *     type: string,
+	 *     alias: ?string,
+	 *     tag: ?string,
+	 *     id: ?int,
+	 *     content?: string,
+	 *     checked?: bool,
+	 * }
 	 * @since 30.0.0
 	 */
+	#[\Override]
 	public function jsonSerialize(): array {
 		return [
 			'index' => $this->index,

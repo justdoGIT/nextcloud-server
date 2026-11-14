@@ -1,4 +1,5 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2020 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
@@ -11,11 +12,14 @@ use OCP\Files\File;
 use OCP\Http\Client\IClientService;
 use OCP\IConfig;
 use OCP\IImage;
-
 use OCP\Image;
+use OCP\Server;
 use Psr\Log\LoggerInterface;
 
 class Imaginary extends ProviderV2 {
+	/** Covers the EXIF segment at the start of a JPEG */
+	private const EXIF_HEAD_SIZE = 256 * 1024;
+
 	/** @var IConfig */
 	private $config;
 
@@ -27,14 +31,15 @@ class Imaginary extends ProviderV2 {
 
 	public function __construct(array $config) {
 		parent::__construct($config);
-		$this->config = \OC::$server->get(IConfig::class);
-		$this->service = \OC::$server->get(IClientService::class);
-		$this->logger = \OC::$server->get(LoggerInterface::class);
+		$this->config = Server::get(IConfig::class);
+		$this->service = Server::get(IClientService::class);
+		$this->logger = Server::get(LoggerInterface::class);
 	}
 
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function getMimeType(): string {
 		return self::supportedMimeTypes();
 	}
@@ -101,6 +106,11 @@ class Imaginary extends ProviderV2 {
 			default:
 		}
 
+		if ($autorotate && $file->getMimeType() === 'image/jpeg') {
+			// Each pipeline operation re-encodes the full image, only rotate when needed
+			$autorotate = $this->needsRotation($file);
+		}
+
 		$operations = [];
 
 		if ($convert) {
@@ -145,7 +155,9 @@ class Imaginary extends ProviderV2 {
 				$imaginaryUrl . '/pipeline', [
 					'query' => ['operations' => json_encode($operations), 'key' => $imaginaryKey],
 					'stream' => true,
-					'content-type' => $file->getMimeType(),
+					'headers' => [
+						'Content-Type' => $file->getMimeType(),
+					],
 					'body' => $stream,
 					'nextcloud' => ['allow_local_address' => true],
 					'timeout' => 120,
@@ -181,9 +193,28 @@ class Imaginary extends ProviderV2 {
 		return $image->valid() ? $image : null;
 	}
 
+	private function needsRotation(File $file): bool {
+		if (!is_callable('exif_read_data')) {
+			return true;
+		}
+		// Read separately, the stream sent to Imaginary has to start at the beginning of the file
+		$stream = $file->fopen('r');
+		if (!is_resource($stream)) {
+			return true;
+		}
+		$head = fread($stream, self::EXIF_HEAD_SIZE);
+		fclose($stream);
+		if ($head === false) {
+			return true;
+		}
+		$exif = @exif_read_data('data://image/jpeg;base64,' . base64_encode($head), 'IFD0');
+		return $exif !== false && isset($exif['Orientation']) && (int)$exif['Orientation'] !== 1;
+	}
+
 	/**
 	 * {@inheritDoc}
 	 */
+	#[\Override]
 	public function getThumbnail(File $file, int $maxX, int $maxY): ?IImage {
 		return $this->getCroppedThumbnail($file, $maxX, $maxY, false);
 	}

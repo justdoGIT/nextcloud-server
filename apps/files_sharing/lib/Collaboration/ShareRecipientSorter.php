@@ -1,8 +1,10 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2017 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Files_Sharing\Collaboration;
 
 use OCP\Collaboration\AutoComplete\ISorter;
@@ -13,20 +15,19 @@ use OCP\Share\IManager;
 
 class ShareRecipientSorter implements ISorter {
 
-	private IManager $shareManager;
-	private IRootFolder $rootFolder;
-	private IUserSession $userSession;
-
-	public function __construct(IManager $shareManager, IRootFolder $rootFolder, IUserSession $userSession) {
-		$this->shareManager = $shareManager;
-		$this->rootFolder = $rootFolder;
-		$this->userSession = $userSession;
+	public function __construct(
+		private IManager $shareManager,
+		private IRootFolder $rootFolder,
+		private IUserSession $userSession,
+	) {
 	}
 
+	#[\Override]
 	public function getId(): string {
 		return 'share-recipients';
 	}
 
+	#[\Override]
 	public function sort(array &$sortArray, array $context) {
 		// let's be tolerant. Comments  uses "files" by default, other usages are often singular
 		if ($context['itemType'] !== 'files' && $context['itemType'] !== 'file') {

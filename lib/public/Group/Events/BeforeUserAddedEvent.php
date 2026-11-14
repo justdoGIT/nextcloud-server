@@ -6,8 +6,10 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2019 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCP\Group\Events;
 
+use OCP\AppFramework\Attribute\Listenable;
 use OCP\EventDispatcher\Event;
 use OCP\IGroup;
 use OCP\IUser;
@@ -15,24 +17,19 @@ use OCP\IUser;
 /**
  * @since 18.0.0
  */
+#[Listenable(since: '18.0.0')]
 class BeforeUserAddedEvent extends Event {
-	/** @var IGroup */
-	private $group;
-
-	/*** @var IUser */
-	private $user;
-
 	/**
 	 * @since 18.0.0
 	 */
-	public function __construct(IGroup $group, IUser $user) {
+	public function __construct(
+		private readonly IGroup $group,
+		private readonly IUser $user,
+	) {
 		parent::__construct();
-		$this->group = $group;
-		$this->user = $user;
 	}
 
 	/**
-	 * @return IGroup
 	 * @since 18.0.0
 	 */
 	public function getGroup(): IGroup {

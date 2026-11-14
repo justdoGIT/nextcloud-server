@@ -1,8 +1,10 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\WorkflowEngine\Check;
 
 use OC\Files\Storage\Wrapper\Jail;
@@ -29,31 +31,13 @@ class FileSystemTags implements ICheck, IFileCheck {
 	/** @var array */
 	protected $fileSystemTags;
 
-	/** @var IL10N */
-	protected $l;
-
-	/** @var ISystemTagManager */
-	protected $systemTagManager;
-
-	/** @var ISystemTagObjectMapper */
-	protected $systemTagObjectMapper;
-	/** @var IUserSession */
-	protected $userSession;
-	/** @var IGroupManager */
-	protected $groupManager;
-
 	public function __construct(
-		IL10N $l,
-		ISystemTagManager $systemTagManager,
-		ISystemTagObjectMapper $systemTagObjectMapper,
-		IUserSession $userSession,
-		IGroupManager $groupManager,
+		protected IL10N $l,
+		protected ISystemTagManager $systemTagManager,
+		protected ISystemTagObjectMapper $systemTagObjectMapper,
+		protected IUserSession $userSession,
+		protected IGroupManager $groupManager,
 	) {
-		$this->l = $l;
-		$this->systemTagManager = $systemTagManager;
-		$this->systemTagObjectMapper = $systemTagObjectMapper;
-		$this->userSession = $userSession;
-		$this->groupManager = $groupManager;
 	}
 
 	/**
@@ -61,9 +45,10 @@ class FileSystemTags implements ICheck, IFileCheck {
 	 * @param string $value
 	 * @return bool
 	 */
+	#[\Override]
 	public function executeCheck($operator, $value) {
 		$systemTags = $this->getSystemTags();
-		return ($operator === 'is') === in_array($value, $systemTags);
+		return ($operator === 'is') === in_array($value, $systemTags, true);
 	}
 
 	/**
@@ -71,8 +56,9 @@ class FileSystemTags implements ICheck, IFileCheck {
 	 * @param string $value
 	 * @throws \UnexpectedValueException
 	 */
+	#[\Override]
 	public function validateCheck($operator, $value) {
-		if (!in_array($operator, ['is', '!is'])) {
+		if (!in_array($operator, ['is', '!is'], true)) {
 			throw new \UnexpectedValueException($this->l->t('The given operator is invalid'), 1);
 		}
 
@@ -166,10 +152,12 @@ class FileSystemTags implements ICheck, IFileCheck {
 		return $dir === '.' ? '' : $dir;
 	}
 
+	#[\Override]
 	public function supportedEntities(): array {
 		return [ File::class ];
 	}
 
+	#[\Override]
 	public function isAvailableForScope(int $scope): bool {
 		return true;
 	}

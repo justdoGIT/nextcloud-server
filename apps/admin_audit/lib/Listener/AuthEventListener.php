@@ -10,6 +10,8 @@ declare(strict_types=1);
 namespace OCA\AdminAudit\Listener;
 
 use OCA\AdminAudit\Actions\Action;
+use OCA\AdminAudit\Operation;
+use OCP\Authentication\Events\AnyLoginFailedEvent;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 use OCP\User\Events\BeforeUserLoggedInEvent;
@@ -18,9 +20,10 @@ use OCP\User\Events\UserLoggedInEvent;
 use OCP\User\Events\UserLoggedInWithCookieEvent;
 
 /**
- * @template-implements IEventListener<BeforeUserLoggedInEvent|UserLoggedInWithCookieEvent|UserLoggedInEvent|BeforeUserLoggedOutEvent>
+ * @template-implements IEventListener<BeforeUserLoggedInEvent|UserLoggedInWithCookieEvent|UserLoggedInEvent|BeforeUserLoggedOutEvent|AnyLoginFailedEvent>
  */
 class AuthEventListener extends Action implements IEventListener {
+	#[\Override]
 	public function handle(Event $event): void {
 		if ($event instanceof BeforeUserLoggedInEvent) {
 			$this->beforeUserLoggedIn($event);
@@ -28,11 +31,14 @@ class AuthEventListener extends Action implements IEventListener {
 			$this->userLoggedIn($event);
 		} elseif ($event instanceof BeforeUserLoggedOutEvent) {
 			$this->beforeUserLogout($event);
+		} elseif ($event instanceof AnyLoginFailedEvent) {
+			$this->anyLoginFailed($event);
 		}
 	}
 
 	private function beforeUserLoggedIn(BeforeUserLoggedInEvent $event): void {
 		$this->log(
+			Operation::LoginAttempted,
 			'Login attempt: "%s"',
 			[
 				'uid' => $event->getUsername()
@@ -46,6 +52,7 @@ class AuthEventListener extends Action implements IEventListener {
 
 	private function userLoggedIn(UserLoggedInWithCookieEvent|UserLoggedInEvent $event): void {
 		$this->log(
+			Operation::LoginSucceeded,
 			'Login successful: "%s"',
 			[
 				'uid' => $event->getUser()->getUID()
@@ -59,9 +66,24 @@ class AuthEventListener extends Action implements IEventListener {
 
 	private function beforeUserLogout(BeforeUserLoggedOutEvent $event): void {
 		$this->log(
+			Operation::LogoutPerformed,
 			'Logout occurred',
 			[],
 			[]
+		);
+	}
+
+	private function anyLoginFailed(AnyLoginFailedEvent $event): void {
+		$this->log(
+			Operation::LoginFailed,
+			'Login failed: "%s"',
+			[
+				'loginName' => $event->getLoginName()
+			],
+			[
+				'loginName',
+			],
+			true
 		);
 	}
 }

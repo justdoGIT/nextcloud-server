@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2019 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\BackgroundJob;
 
 use OCA\DAV\CalDAV\Reminder\ReminderService;
@@ -22,36 +23,24 @@ use Psr\Log\LoggerInterface;
  */
 class BuildReminderIndexBackgroundJob extends QueuedJob {
 
-	/** @var IDBConnection */
-	private $db;
-
-	/** @var ReminderService */
-	private $reminderService;
-
-	private LoggerInterface $logger;
-
-	/** @var IJobList */
-	private $jobList;
-
 	/** @var ITimeFactory */
 	private $timeFactory;
 
 	/**
 	 * BuildReminderIndexBackgroundJob constructor.
 	 */
-	public function __construct(IDBConnection $db,
-		ReminderService $reminderService,
-		LoggerInterface $logger,
-		IJobList $jobList,
-		ITimeFactory $timeFactory) {
+	public function __construct(
+		private IDBConnection $db,
+		private ReminderService $reminderService,
+		private LoggerInterface $logger,
+		private IJobList $jobList,
+		ITimeFactory $timeFactory,
+	) {
 		parent::__construct($timeFactory);
-		$this->db = $db;
-		$this->reminderService = $reminderService;
-		$this->logger = $logger;
-		$this->jobList = $jobList;
 		$this->timeFactory = $timeFactory;
 	}
 
+	#[\Override]
 	public function run($argument) {
 		$offset = (int)$argument['offset'];
 		$stopAt = (int)$argument['stopAt'];
@@ -87,7 +76,7 @@ class BuildReminderIndexBackgroundJob extends QueuedJob {
 			->orderBy('id', 'ASC');
 
 		$result = $query->executeQuery();
-		while ($row = $result->fetch(\PDO::FETCH_ASSOC)) {
+		while ($row = $result->fetchAssociative()) {
 			$offset = (int)$row['id'];
 			if (is_resource($row['calendardata'])) {
 				$row['calendardata'] = stream_get_contents($row['calendardata']);

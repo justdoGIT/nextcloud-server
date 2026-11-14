@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2020 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCP\AppFramework\Services;
 
 use Closure;
@@ -37,7 +38,7 @@ interface IInitialState {
 	 *
 	 * @param string $key
 	 * @param Closure $closure returns a primitive or an object that implements JsonSerializable
-	 * @psalm-param Closure():bool|Closure():int|Closure():float|Closure():string|Closure():\JsonSerializable $closure
+	 * @psalm-param Closure():bool|Closure():int|Closure():float|Closure():string|Closure():array|Closure():\JsonSerializable $closure
 	 */
 	public function provideLazyInitialState(string $key, Closure $closure): void;
 }

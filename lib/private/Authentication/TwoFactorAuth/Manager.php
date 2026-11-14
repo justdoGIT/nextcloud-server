@@ -6,12 +6,15 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OC\Authentication\TwoFactorAuth;
 
 use BadMethodCallException;
 use Exception;
 use OC\Authentication\Token\IProvider as TokenProvider;
+use OC\User\Session;
 use OCP\Activity\IManager;
+use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Authentication\Exceptions\InvalidTokenException;
 use OCP\Authentication\TwoFactorAuth\IActivatableAtLogin;
@@ -25,6 +28,8 @@ use OCP\EventDispatcher\IEventDispatcher;
 use OCP\IConfig;
 use OCP\ISession;
 use OCP\IUser;
+use OCP\IUserSession;
+use OCP\Server;
 use OCP\Session\Exceptions\SessionNotAvailableException;
 use Psr\Log\LoggerInterface;
 use function array_diff;
@@ -36,59 +41,21 @@ class Manager {
 	public const REMEMBER_LOGIN = 'two_factor_remember_login';
 	public const BACKUP_CODES_PROVIDER_ID = 'backup_codes';
 
-	/** @var ProviderLoader */
-	private $providerLoader;
-
-	/** @var IRegistry */
-	private $providerRegistry;
-
-	/** @var MandatoryTwoFactor */
-	private $mandatoryTwoFactor;
-
-	/** @var ISession */
-	private $session;
-
-	/** @var IConfig */
-	private $config;
-
-	/** @var IManager */
-	private $activityManager;
-
-	/** @var LoggerInterface */
-	private $logger;
-
-	/** @var TokenProvider */
-	private $tokenProvider;
-
-	/** @var ITimeFactory */
-	private $timeFactory;
-
-	/** @var IEventDispatcher */
-	private $dispatcher;
-
 	/** @psalm-var array<string, bool> */
 	private $userIsTwoFactorAuthenticated = [];
 
-	public function __construct(ProviderLoader $providerLoader,
-		IRegistry $providerRegistry,
-		MandatoryTwoFactor $mandatoryTwoFactor,
-		ISession $session,
-		IConfig $config,
-		IManager $activityManager,
-		LoggerInterface $logger,
-		TokenProvider $tokenProvider,
-		ITimeFactory $timeFactory,
-		IEventDispatcher $eventDispatcher) {
-		$this->providerLoader = $providerLoader;
-		$this->providerRegistry = $providerRegistry;
-		$this->mandatoryTwoFactor = $mandatoryTwoFactor;
-		$this->session = $session;
-		$this->config = $config;
-		$this->activityManager = $activityManager;
-		$this->logger = $logger;
-		$this->tokenProvider = $tokenProvider;
-		$this->timeFactory = $timeFactory;
-		$this->dispatcher = $eventDispatcher;
+	public function __construct(
+		private ProviderLoader $providerLoader,
+		private IRegistry $providerRegistry,
+		private MandatoryTwoFactor $mandatoryTwoFactor,
+		private ISession $session,
+		private IConfig $config,
+		private IManager $activityManager,
+		private LoggerInterface $logger,
+		private TokenProvider $tokenProvider,
+		private ITimeFactory $timeFactory,
+		private IEventDispatcher $dispatcher,
+	) {
 	}
 
 	/**
@@ -238,7 +205,9 @@ class Manager {
 		if ($passed) {
 			if ($this->session->get(self::REMEMBER_LOGIN) === true) {
 				// TODO: resolve cyclic dependency and use DI
-				\OC::$server->getUserSession()->createRememberMeToken($user);
+				/** @var Session $session */
+				$session = Server::get(IUserSession::class);
+				$session->createRememberMeToken($user);
 			}
 			$this->session->remove(self::SESSION_UID_KEY);
 			$this->session->remove(self::REMEMBER_LOGIN);
@@ -307,8 +276,8 @@ class Manager {
 		// First check if the session tells us we should do 2FA (99% case)
 		if (!$this->session->exists(self::SESSION_UID_KEY)) {
 			// Check if the session tells us it is 2FA authenticated already
-			if ($this->session->exists(self::SESSION_UID_DONE) &&
-				$this->session->get(self::SESSION_UID_DONE) === $user->getUID()) {
+			if ($this->session->exists(self::SESSION_UID_DONE)
+				&& $this->session->get(self::SESSION_UID_DONE) === $user->getUID()) {
 				return false;
 			}
 
@@ -366,7 +335,12 @@ class Manager {
 		$tokensNeeding2FA = $this->config->getUserKeys($userId, 'login_token_2fa');
 
 		foreach ($tokensNeeding2FA as $tokenId) {
-			$this->tokenProvider->invalidateTokenById($userId, (int)$tokenId);
+			$this->config->deleteUserValue($userId, 'login_token_2fa', $tokenId);
+
+			try {
+				$this->tokenProvider->invalidateTokenById($userId, (int)$tokenId);
+			} catch (DoesNotExistException $e) {
+			}
 		}
 	}
 }

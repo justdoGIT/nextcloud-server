@@ -5,6 +5,7 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\FederatedFileSharing\BackgroundJob;
 
 use OCA\FederatedFileSharing\Notifications;
@@ -22,7 +23,6 @@ use OCP\BackgroundJob\Job;
  */
 class RetryJob extends Job {
 	private bool $retainJob = true;
-	private Notifications $notifications;
 
 	/** @var int max number of attempts to send the request */
 	private int $maxTry = 20;
@@ -30,15 +30,17 @@ class RetryJob extends Job {
 	/** @var int how much time should be between two tries (10 minutes) */
 	private int $interval = 600;
 
-	public function __construct(Notifications $notifications,
-		ITimeFactory $time) {
+	public function __construct(
+		private Notifications $notifications,
+		ITimeFactory $time,
+	) {
 		parent::__construct($time);
-		$this->notifications = $notifications;
 	}
 
 	/**
 	 * Run the job, then remove it from the jobList
 	 */
+	#[\Override]
 	public function start(IJobList $jobList): void {
 		if ($this->shouldRun($this->argument)) {
 			parent::start($jobList);
@@ -49,6 +51,7 @@ class RetryJob extends Job {
 		}
 	}
 
+	#[\Override]
 	protected function run($argument) {
 		$remote = $argument['remote'];
 		$remoteId = $argument['remoteId'];

@@ -1,9 +1,11 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2018 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\DAV;
 
 use OCP\Constants;
@@ -20,32 +22,17 @@ use Sabre\DAVACL\PrincipalBackend\BackendInterface;
 class GroupPrincipalBackend implements BackendInterface {
 	public const PRINCIPAL_PREFIX = 'principals/groups';
 
-	/** @var IGroupManager */
-	private $groupManager;
-
-	/** @var IUserSession */
-	private $userSession;
-
-	/** @var IShareManager */
-	private $shareManager;
-	/** @var IConfig */
-	private $config;
-
 	/**
-	 * @param IGroupManager $IGroupManager
+	 * @param IGroupManager $groupManager
 	 * @param IUserSession $userSession
 	 * @param IShareManager $shareManager
 	 */
 	public function __construct(
-		IGroupManager $IGroupManager,
-		IUserSession $userSession,
-		IShareManager $shareManager,
-		IConfig $config,
+		private IGroupManager $groupManager,
+		private IUserSession $userSession,
+		private IShareManager $shareManager,
+		private IConfig $config,
 	) {
-		$this->groupManager = $IGroupManager;
-		$this->userSession = $userSession;
-		$this->shareManager = $shareManager;
-		$this->config = $config;
 	}
 
 	/**
@@ -61,12 +48,15 @@ class GroupPrincipalBackend implements BackendInterface {
 	 * @param string $prefixPath
 	 * @return string[]
 	 */
+	#[\Override]
 	public function getPrincipalsByPrefix($prefixPath) {
 		$principals = [];
 
 		if ($prefixPath === self::PRINCIPAL_PREFIX) {
-			foreach ($this->groupManager->search('') as $user) {
-				$principals[] = $this->groupToPrincipal($user);
+			foreach ($this->groupManager->search('') as $group) {
+				if (!$group->hideFromCollaboration()) {
+					$principals[] = $this->groupToPrincipal($group);
+				}
 			}
 		}
 
@@ -81,6 +71,7 @@ class GroupPrincipalBackend implements BackendInterface {
 	 * @param string $path
 	 * @return array
 	 */
+	#[\Override]
 	public function getPrincipalByPath($path) {
 		$elements = explode('/', $path, 3);
 		if ($elements[0] !== 'principals') {
@@ -92,7 +83,7 @@ class GroupPrincipalBackend implements BackendInterface {
 		$name = urldecode($elements[2]);
 		$group = $this->groupManager->get($name);
 
-		if (!is_null($group)) {
+		if ($group !== null && !$group->hideFromCollaboration()) {
 			return $this->groupToPrincipal($group);
 		}
 
@@ -106,6 +97,7 @@ class GroupPrincipalBackend implements BackendInterface {
 	 * @return array
 	 * @throws Exception
 	 */
+	#[\Override]
 	public function getGroupMemberSet($principal) {
 		$elements = explode('/', $principal);
 		if ($elements[0] !== 'principals') {
@@ -133,6 +125,7 @@ class GroupPrincipalBackend implements BackendInterface {
 	 * @return array
 	 * @throws Exception
 	 */
+	#[\Override]
 	public function getGroupMembership($principal) {
 		return [];
 	}
@@ -146,6 +139,7 @@ class GroupPrincipalBackend implements BackendInterface {
 	 * @param string[] $members
 	 * @throws Exception
 	 */
+	#[\Override]
 	public function setGroupMemberSet($principal, array $members) {
 		throw new Exception('Setting members of the group is not supported yet');
 	}
@@ -155,6 +149,7 @@ class GroupPrincipalBackend implements BackendInterface {
 	 * @param PropPatch $propPatch
 	 * @return int
 	 */
+	#[\Override]
 	public function updatePrincipal($path, PropPatch $propPatch) {
 		return 0;
 	}
@@ -165,6 +160,7 @@ class GroupPrincipalBackend implements BackendInterface {
 	 * @param string $test
 	 * @return array
 	 */
+	#[\Override]
 	public function searchPrincipals($prefixPath, array $searchProperties, $test = 'allof') {
 		$results = [];
 
@@ -201,6 +197,10 @@ class GroupPrincipalBackend implements BackendInterface {
 					$groups = $this->groupManager->search($value, $searchLimit);
 
 					$results[] = array_reduce($groups, function (array $carry, IGroup $group) use ($restrictGroups) {
+						if ($group->hideFromCollaboration()) {
+							return $carry;
+						}
+
 						$gid = $group->getGID();
 						// is sharing restricted to groups only?
 						if ($restrictGroups !== false) {
@@ -236,7 +236,6 @@ class GroupPrincipalBackend implements BackendInterface {
 		switch ($test) {
 			case 'anyof':
 				return array_values(array_unique(array_merge(...$results)));
-
 			case 'allof':
 			default:
 				return array_values(array_intersect(...$results));
@@ -248,6 +247,7 @@ class GroupPrincipalBackend implements BackendInterface {
 	 * @param string $principalPrefix
 	 * @return string
 	 */
+	#[\Override]
 	public function findByUri($uri, $principalPrefix) {
 		// If sharing is disabled, return the empty array
 		if (!$this->groupSharingEnabled()) {

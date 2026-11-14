@@ -5,16 +5,13 @@
  * SPDX-FileCopyrightText: 2017 ownCloud GmbH
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\Avatars;
 
 use OCP\IAvatar;
 use Sabre\DAV\File;
 
 class AvatarNode extends File {
-	private $ext;
-	private $size;
-	private $avatar;
-
 	/**
 	 * AvatarNode constructor.
 	 *
@@ -22,10 +19,11 @@ class AvatarNode extends File {
 	 * @param string $ext
 	 * @param IAvatar $avatar
 	 */
-	public function __construct($size, $ext, $avatar) {
-		$this->size = $size;
-		$this->ext = $ext;
-		$this->avatar = $avatar;
+	public function __construct(
+		private $size,
+		private $ext,
+		private $avatar,
+	) {
 	}
 
 	/**
@@ -35,10 +33,12 @@ class AvatarNode extends File {
 	 *
 	 * @return string
 	 */
+	#[\Override]
 	public function getName() {
 		return "$this->size.$this->ext";
 	}
 
+	#[\Override]
 	public function get() {
 		$image = $this->avatar->get($this->size);
 		$res = $image->resource();
@@ -60,6 +60,7 @@ class AvatarNode extends File {
 	 *
 	 * @return string|null
 	 */
+	#[\Override]
 	public function getContentType() {
 		if ($this->ext === 'png') {
 			return 'image/png';
@@ -67,15 +68,13 @@ class AvatarNode extends File {
 		return 'image/jpeg';
 	}
 
+	#[\Override]
 	public function getETag() {
 		return $this->avatar->getFile($this->size)->getEtag();
 	}
 
+	#[\Override]
 	public function getLastModified() {
-		$timestamp = $this->avatar->getFile($this->size)->getMTime();
-		if (!empty($timestamp)) {
-			return (int)$timestamp;
-		}
-		return $timestamp;
+		return $this->avatar->getFile($this->size)->getMTime();
 	}
 }

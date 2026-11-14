@@ -1,23 +1,25 @@
 <?php
+
+declare(strict_types=1);
 /**
  * SPDX-FileCopyrightText: 2019-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Files_External\Tests\Service;
 
-use OC\Files\Filesystem;
-use OCA\Files_External\MountConfig;
-
+use OCA\Files_External\Event\StorageCreatedEvent;
+use OCA\Files_External\Event\StorageDeletedEvent;
+use OCA\Files_External\Event\StorageUpdatedEvent;
 use OCA\Files_External\Service\GlobalStoragesService;
+use OCP\Files\Events\InvalidateMountCacheEvent;
 
-/**
- * @group DB
- */
-class GlobalStoragesServiceTest extends StoragesServiceTest {
+#[\PHPUnit\Framework\Attributes\Group(name: 'DB')]
+class GlobalStoragesServiceTest extends StoragesServiceTestCase {
 	protected function setUp(): void {
 		parent::setUp();
-		$this->service = new GlobalStoragesService($this->backendService, $this->dbConfig, $this->mountCache, $this->eventDispatcher);
+		$this->service = new GlobalStoragesService($this->backendService, $this->dbConfig, $this->eventDispatcher, $this->appConfig);
 	}
 
 	protected function tearDown(): void {
@@ -44,7 +46,7 @@ class GlobalStoragesServiceTest extends StoragesServiceTest {
 		]);
 	}
 
-	public function storageDataProvider() {
+	public static function storageDataProvider(): array {
 		return [
 			// all users
 			[
@@ -113,9 +115,7 @@ class GlobalStoragesServiceTest extends StoragesServiceTest {
 		];
 	}
 
-	/**
-	 * @dataProvider storageDataProvider
-	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider(methodName: 'storageDataProvider')]
 	public function testAddStorage($storageParams): void {
 		$storage = $this->makeStorageConfig($storageParams);
 		$newStorage = $this->service->addStorage($storage);
@@ -137,9 +137,7 @@ class GlobalStoragesServiceTest extends StoragesServiceTest {
 		$this->assertEquals($baseId + 1, $nextStorage->getId());
 	}
 
-	/**
-	 * @dataProvider storageDataProvider
-	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider(methodName: 'storageDataProvider')]
 	public function testUpdateStorage($updatedStorageParams): void {
 		$updatedStorage = $this->makeStorageConfig($updatedStorageParams);
 		$storage = $this->makeStorageConfig([
@@ -166,443 +164,112 @@ class GlobalStoragesServiceTest extends StoragesServiceTest {
 
 		$this->assertEquals($updatedStorage->getMountPoint(), $newStorage->getMountPoint());
 		$this->assertEquals($updatedStorage->getBackendOptions()['password'], $newStorage->getBackendOptions()['password']);
-		$this->assertEquals($updatedStorage->getApplicableUsers(), $newStorage->getApplicableUsers());
+		$this->assertEqualsCanonicalizing($updatedStorage->getApplicableUsers(), $newStorage->getApplicableUsers());
 		$this->assertEquals($updatedStorage->getApplicableGroups(), $newStorage->getApplicableGroups());
 		$this->assertEquals($updatedStorage->getPriority(), $newStorage->getPriority());
 		$this->assertEquals(0, $newStorage->getStatus());
 	}
 
-	public function hooksAddStorageDataProvider() {
-		return [
-			// applicable all
-			[
-				[],
-				[],
-				// expected hook calls
-				[
-					[
-						Filesystem::signal_create_mount,
-						MountConfig::MOUNT_TYPE_USER,
-						'all'
-					],
-				],
-			],
-			// single user
-			[
-				['user1'],
-				[],
-				// expected hook calls
-				[
-					[
-						Filesystem::signal_create_mount,
-						MountConfig::MOUNT_TYPE_USER,
-						'user1',
-					],
-				],
-			],
-			// single group
-			[
-				[],
-				['group1'],
-				// expected hook calls
-				[
-					[
-						Filesystem::signal_create_mount,
-						MountConfig::MOUNT_TYPE_GROUP,
-						'group1',
-					],
-				],
-			],
-			// multiple users
-			[
-				['user1', 'user2'],
-				[],
-				[
-					[
-						Filesystem::signal_create_mount,
-						MountConfig::MOUNT_TYPE_USER,
-						'user1',
-					],
-					[
-						Filesystem::signal_create_mount,
-						MountConfig::MOUNT_TYPE_USER,
-						'user2',
-					],
-				],
-			],
-			// multiple groups
-			[
-				[],
-				['group1', 'group2'],
-				// expected hook calls
-				[
-					[
-						Filesystem::signal_create_mount,
-						MountConfig::MOUNT_TYPE_GROUP,
-						'group1'
-					],
-					[
-						Filesystem::signal_create_mount,
-						MountConfig::MOUNT_TYPE_GROUP,
-						'group2'
-					],
-				],
-			],
-			// mixed groups and users
-			[
-				['user1', 'user2'],
-				['group1', 'group2'],
-				// expected hook calls
-				[
-					[
-						Filesystem::signal_create_mount,
-						MountConfig::MOUNT_TYPE_USER,
-						'user1',
-					],
-					[
-						Filesystem::signal_create_mount,
-						MountConfig::MOUNT_TYPE_USER,
-						'user2',
-					],
-					[
-						Filesystem::signal_create_mount,
-						MountConfig::MOUNT_TYPE_GROUP,
-						'group1'
-					],
-					[
-						Filesystem::signal_create_mount,
-						MountConfig::MOUNT_TYPE_GROUP,
-						'group2'
-					],
-				],
-			],
-		];
-	}
-
-	/**
-	 * @dataProvider hooksAddStorageDataProvider
-	 */
-	public function testHooksAddStorage($applicableUsers, $applicableGroups, $expectedCalls): void {
+	public function testEventsAddStorage(): void {
 		$storage = $this->makeTestStorageData();
-		$storage->setApplicableUsers($applicableUsers);
-		$storage->setApplicableGroups($applicableGroups);
-		$this->service->addStorage($storage);
-
-		$this->assertCount(count($expectedCalls), self::$hookCalls);
-
-		foreach ($expectedCalls as $index => $call) {
-			$this->assertHookCall(
-				self::$hookCalls[$index],
-				$call[0],
-				$storage->getMountPoint(),
-				$call[1],
-				$call[2]
-			);
-		}
-	}
-
-	public function hooksUpdateStorageDataProvider() {
-		return [
-			[
-				// nothing to multiple users and groups
-				[],
-				[],
-				['user1', 'user2'],
-				['group1', 'group2'],
-				// expected hook calls
-				[
-					// delete the "all entry"
-					[
-						Filesystem::signal_delete_mount,
-						MountConfig::MOUNT_TYPE_USER,
-						'all',
-					],
-					[
-						Filesystem::signal_create_mount,
-						MountConfig::MOUNT_TYPE_USER,
-						'user1',
-					],
-					[
-						Filesystem::signal_create_mount,
-						MountConfig::MOUNT_TYPE_USER,
-						'user2',
-					],
-					[
-						Filesystem::signal_create_mount,
-						MountConfig::MOUNT_TYPE_GROUP,
-						'group1'
-					],
-					[
-						Filesystem::signal_create_mount,
-						MountConfig::MOUNT_TYPE_GROUP,
-						'group2'
-					],
-				],
-			],
-			[
-				// adding a user and a group
-				['user1'],
-				['group1'],
-				['user1', 'user2'],
-				['group1', 'group2'],
-				// expected hook calls
-				[
-					[
-						Filesystem::signal_create_mount,
-						MountConfig::MOUNT_TYPE_USER,
-						'user2',
-					],
-					[
-						Filesystem::signal_create_mount,
-						MountConfig::MOUNT_TYPE_GROUP,
-						'group2'
-					],
-				],
-			],
-			[
-				// removing a user and a group
-				['user1', 'user2'],
-				['group1', 'group2'],
-				['user1'],
-				['group1'],
-				// expected hook calls
-				[
-					[
-						Filesystem::signal_delete_mount,
-						MountConfig::MOUNT_TYPE_USER,
-						'user2',
-					],
-					[
-						Filesystem::signal_delete_mount,
-						MountConfig::MOUNT_TYPE_GROUP,
-						'group2'
-					],
-				],
-			],
-			[
-				// removing all
-				['user1'],
-				['group1'],
-				[],
-				[],
-				// expected hook calls
-				[
-					[
-						Filesystem::signal_delete_mount,
-						MountConfig::MOUNT_TYPE_USER,
-						'user1',
-					],
-					[
-						Filesystem::signal_delete_mount,
-						MountConfig::MOUNT_TYPE_GROUP,
-						'group1'
-					],
-					// create the "all" entry
-					[
-						Filesystem::signal_create_mount,
-						MountConfig::MOUNT_TYPE_USER,
-						'all'
-					],
-				],
-			],
-			[
-				// no changes
-				['user1'],
-				['group1'],
-				['user1'],
-				['group1'],
-				// no hook calls
-				[]
-			]
-		];
-	}
-
-	/**
-	 * @dataProvider hooksUpdateStorageDataProvider
-	 */
-	public function testHooksUpdateStorage(
-		$sourceApplicableUsers,
-		$sourceApplicableGroups,
-		$updatedApplicableUsers,
-		$updatedApplicableGroups,
-		$expectedCalls): void {
-		$storage = $this->makeTestStorageData();
-		$storage->setApplicableUsers($sourceApplicableUsers);
-		$storage->setApplicableGroups($sourceApplicableGroups);
+		$storage->setApplicableUsers(['user1']);
+		$storage->setApplicableGroups(['group1']);
 		$storage = $this->service->addStorage($storage);
 
-		$storage->setApplicableUsers($updatedApplicableUsers);
-		$storage->setApplicableGroups($updatedApplicableGroups);
+		$this->assertDispatchedEvents([StorageCreatedEvent::class, InvalidateMountCacheEvent::class]);
+		$this->assertSame($storage, $this->dispatchedEvents[0]->getNewConfig());
+	}
 
-		// reset calls
-		self::$hookCalls = [];
+	public function testEventsUpdateStorage(): void {
+		$storage = $this->makeTestStorageData();
+		$storage->setApplicableUsers(['user1']);
+		$storage = $this->service->addStorage($storage);
+
+		$storage->setApplicableUsers(['user1', 'user2']);
+		$this->dispatchedEvents = [];
 
 		$this->service->updateStorage($storage);
 
-		$this->assertCount(count($expectedCalls), self::$hookCalls);
-
-		foreach ($expectedCalls as $index => $call) {
-			$this->assertHookCall(
-				self::$hookCalls[$index],
-				$call[0],
-				'/mountpoint',
-				$call[1],
-				$call[2]
-			);
-		}
+		$this->assertDispatchedEvents([StorageUpdatedEvent::class, InvalidateMountCacheEvent::class]);
+		$this->assertEquals(['user1'], $this->dispatchedEvents[0]->getOldConfig()->getApplicableUsers());
+		$this->assertEqualsCanonicalizing(['user1', 'user2'], $this->dispatchedEvents[0]->getNewConfig()->getApplicableUsers());
 	}
 
-
-	public function testHooksRenameMountPoint(): void {
+	public function testEventsRenameMountPoint(): void {
 		$storage = $this->makeTestStorageData();
 		$storage->setApplicableUsers(['user1', 'user2']);
 		$storage->setApplicableGroups(['group1', 'group2']);
 		$storage = $this->service->addStorage($storage);
 
 		$storage->setMountPoint('renamedMountpoint');
-
-		// reset calls
-		self::$hookCalls = [];
+		$this->dispatchedEvents = [];
 
 		$this->service->updateStorage($storage);
 
-		$expectedCalls = [
-			// deletes old mount
-			[
-				Filesystem::signal_delete_mount,
-				'/mountpoint',
-				MountConfig::MOUNT_TYPE_USER,
-				'user1',
-			],
-			[
-				Filesystem::signal_delete_mount,
-				'/mountpoint',
-				MountConfig::MOUNT_TYPE_USER,
-				'user2',
-			],
-			[
-				Filesystem::signal_delete_mount,
-				'/mountpoint',
-				MountConfig::MOUNT_TYPE_GROUP,
-				'group1',
-			],
-			[
-				Filesystem::signal_delete_mount,
-				'/mountpoint',
-				MountConfig::MOUNT_TYPE_GROUP,
-				'group2',
-			],
-			// creates new one
-			[
-				Filesystem::signal_create_mount,
-				'/renamedMountpoint',
-				MountConfig::MOUNT_TYPE_USER,
-				'user1',
-			],
-			[
-				Filesystem::signal_create_mount,
-				'/renamedMountpoint',
-				MountConfig::MOUNT_TYPE_USER,
-				'user2',
-			],
-			[
-				Filesystem::signal_create_mount,
-				'/renamedMountpoint',
-				MountConfig::MOUNT_TYPE_GROUP,
-				'group1',
-			],
-			[
-				Filesystem::signal_create_mount,
-				'/renamedMountpoint',
-				MountConfig::MOUNT_TYPE_GROUP,
-				'group2',
-			],
-		];
-
-		$this->assertCount(count($expectedCalls), self::$hookCalls);
-
-		foreach ($expectedCalls as $index => $call) {
-			$this->assertHookCall(
-				self::$hookCalls[$index],
-				$call[0],
-				$call[1],
-				$call[2],
-				$call[3]
-			);
-		}
+		$this->assertDispatchedEvents([StorageDeletedEvent::class, StorageCreatedEvent::class, InvalidateMountCacheEvent::class]);
+		$this->assertEquals('/mountpoint', $this->dispatchedEvents[0]->getOldConfig()->getMountPoint());
+		$this->assertEquals('/renamedMountpoint', $this->dispatchedEvents[1]->getNewConfig()->getMountPoint());
 	}
 
-	public function hooksDeleteStorageDataProvider() {
-		return [
-			[
-				['user1', 'user2'],
-				['group1', 'group2'],
-				// expected hook calls
-				[
-					[
-						Filesystem::signal_delete_mount,
-						MountConfig::MOUNT_TYPE_USER,
-						'user1',
-					],
-					[
-						Filesystem::signal_delete_mount,
-						MountConfig::MOUNT_TYPE_USER,
-						'user2',
-					],
-					[
-						Filesystem::signal_delete_mount,
-						MountConfig::MOUNT_TYPE_GROUP,
-						'group1'
-					],
-					[
-						Filesystem::signal_delete_mount,
-						MountConfig::MOUNT_TYPE_GROUP,
-						'group2'
-					],
-				],
-			],
-			[
-				// deleting "all" entry
-				[],
-				[],
-				[
-					[
-						Filesystem::signal_delete_mount,
-						MountConfig::MOUNT_TYPE_USER,
-						'all',
-					],
-				],
-			],
-		];
-	}
-
-	/**
-	 * @dataProvider hooksDeleteStorageDataProvider
-	 */
-	public function testHooksDeleteStorage(
-		$sourceApplicableUsers,
-		$sourceApplicableGroups,
-		$expectedCalls): void {
+	public function testEventsDeleteStorage(): void {
 		$storage = $this->makeTestStorageData();
-		$storage->setApplicableUsers($sourceApplicableUsers);
-		$storage->setApplicableGroups($sourceApplicableGroups);
+		$storage->setApplicableUsers(['user1']);
+		$storage->setApplicableGroups(['group1']);
 		$storage = $this->service->addStorage($storage);
-
-		// reset calls
-		self::$hookCalls = [];
+		$this->dispatchedEvents = [];
 
 		$this->service->removeStorage($storage->getId());
 
-		$this->assertCount(count($expectedCalls), self::$hookCalls);
+		$this->assertDispatchedEvents([StorageDeletedEvent::class, InvalidateMountCacheEvent::class]);
+		$this->assertEquals($storage->getId(), $this->dispatchedEvents[0]->getOldConfig()->getId());
+	}
 
-		foreach ($expectedCalls as $index => $call) {
-			$this->assertHookCall(
-				self::$hookCalls[$index],
-				$call[0],
-				'/mountpoint',
-				$call[1],
-				$call[2]
-			);
+	public function testAuditEvents(): void {
+		$storage = $this->makeTestStorageData();
+		$storage->setApplicableUsers(['user1', 'user2']);
+		$storage->setApplicableGroups(['group1']);
+		$storage = $this->service->addStorage($storage);
+		$id = $storage->getId();
+
+		$storage->setApplicableUsers(['user3']);
+		$storage->setApplicableGroups([]);
+		$this->service->updateStorage($storage);
+
+		$this->service->removeStorage($id);
+
+		$this->assertCount(3, $this->auditEvents);
+
+		$this->assertSame('files_external.storage.created', $this->auditEvents[0]->getOperation());
+		$this->assertSame('External storage "%s" was created with mount point "%s", backend "%s", authentication mechanism "%s", applicable users "%s", applicable groups "%s" and scope "%s"', $this->auditEvents[0]->getLogMessage());
+		$this->assertSame([
+			'storageId' => $id,
+			'mountPoint' => '/mountpoint',
+			'backend' => 'identifier:\OCA\Files_External\Lib\Backend\SMB',
+			'authMechanism' => 'identifier:\Auth\Mechanism',
+			'applicableUsers' => 'user1, user2',
+			'applicableGroups' => 'group1',
+			'scope' => 'admin',
+		], $this->auditEvents[0]->getParameters());
+
+		$this->assertSame('files_external.storage.updated', $this->auditEvents[1]->getOperation());
+		$this->assertSame('External storage "%s" was updated with mount point "%s", applicable users "%s" and applicable groups "%s"', $this->auditEvents[1]->getLogMessage());
+		$this->assertSame([
+			'storageId' => $id,
+			'mountPoint' => '/mountpoint',
+			'applicableUsers' => 'user3',
+			'applicableGroups' => '',
+		], $this->auditEvents[1]->getParameters());
+
+		$this->assertSame('files_external.storage.deleted', $this->auditEvents[2]->getOperation());
+		$this->assertSame('External storage "%s" with mount point "%s" and scope "%s" was deleted', $this->auditEvents[2]->getLogMessage());
+		$this->assertSame([
+			'storageId' => $id,
+			'mountPoint' => '/mountpoint',
+			'scope' => 'admin',
+		], $this->auditEvents[2]->getParameters());
+
+		foreach ($this->auditEvents as $event) {
+			$this->assertStringNotContainsString('testPassword', json_encode($event->getParameters()));
 		}
 	}
 }

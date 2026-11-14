@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2020 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Migration;
 
 use OCA\DAV\CardDAV\CardDavBackend;
@@ -27,9 +28,10 @@ class BuildSocialSearchIndexBackgroundJob extends QueuedJob {
 		parent::__construct($timeFactory);
 	}
 
-	public function run($arguments) {
-		$offset = $arguments['offset'];
-		$stopAt = $arguments['stopAt'];
+	#[\Override]
+	public function run($argument) {
+		$offset = $argument['offset'];
+		$stopAt = $argument['stopAt'];
 
 		$this->logger->info('Indexing social profile data (' . $offset . '/' . $stopAt . ')');
 
@@ -62,7 +64,7 @@ class BuildSocialSearchIndexBackgroundJob extends QueuedJob {
 			->where($query->expr()->like('carddata', $query->createNamedParameter('%SOCIALPROFILE%')))
 			->andWhere($query->expr()->gt('id', $query->createNamedParameter((int)$offset, IQueryBuilder::PARAM_INT)))
 			->setMaxResults(100);
-		$social_cards = $query->executeQuery()->fetchAll();
+		$social_cards = $query->executeQuery()->fetchAllAssociative();
 
 		if (empty($social_cards)) {
 			return $stopAt;
@@ -71,7 +73,11 @@ class BuildSocialSearchIndexBackgroundJob extends QueuedJob {
 		// refresh identified contacts in order to re-index
 		foreach ($social_cards as $contact) {
 			$offset = $contact['id'];
-			$this->davBackend->updateCard($contact['addressbookid'], $contact['uri'], $contact['carddata']);
+			$cardData = $contact['carddata'];
+			if (is_resource($cardData) && (get_resource_type($cardData) === 'stream')) {
+				$cardData = stream_get_contents($cardData);
+			}
+			$this->davBackend->updateCard($contact['addressbookid'], $contact['uri'], $cardData);
 
 			// stop after 15sec (to be continued with next chunk)
 			if (($this->time->getTime() - $startTime) > 15) {

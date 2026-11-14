@@ -1,9 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 /**
  * SPDX-FileCopyrightText: 2021 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\Settings\Listener;
 
 use OCA\Settings\Service\AuthorizedGroupService;
@@ -14,16 +17,15 @@ use OCP\Group\Events\GroupDeletedEvent;
 /** @template-implements IEventListener<GroupDeletedEvent> */
 class GroupRemovedListener implements IEventListener {
 
-	/** @var AuthorizedGroupService $authorizedGroupService */
-	private $authorizedGroupService;
-
-	public function __construct(AuthorizedGroupService $authorizedGroupService) {
-		$this->authorizedGroupService = $authorizedGroupService;
+	public function __construct(
+		private AuthorizedGroupService $authorizedGroupService,
+	) {
 	}
 
 	/**
 	 * @inheritDoc
 	 */
+	#[\Override]
 	public function handle(Event $event): void {
 		if (!($event instanceof GroupDeletedEvent)) {
 			return;

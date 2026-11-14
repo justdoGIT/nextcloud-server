@@ -5,6 +5,7 @@
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\DAV\Comments;
 
 use OCP\Comments\CommentsEntityEvent;
@@ -21,24 +22,15 @@ use Sabre\DAV\ICollection;
 class RootCollection implements ICollection {
 	/** @var EntityTypeCollection[]|null */
 	private ?array $entityTypeCollections = null;
-	protected ICommentsManager $commentsManager;
 	protected string $name = 'comments';
-	protected LoggerInterface $logger;
-	protected IUserManager $userManager;
-	protected IUserSession $userSession;
-	protected IEventDispatcher $dispatcher;
 
 	public function __construct(
-		ICommentsManager $commentsManager,
-		IUserManager $userManager,
-		IUserSession $userSession,
-		IEventDispatcher $dispatcher,
-		LoggerInterface $logger) {
-		$this->commentsManager = $commentsManager;
-		$this->logger = $logger;
-		$this->userManager = $userManager;
-		$this->userSession = $userSession;
-		$this->dispatcher = $dispatcher;
+		protected ICommentsManager $commentsManager,
+		protected IUserManager $userManager,
+		protected IUserSession $userSession,
+		protected IEventDispatcher $dispatcher,
+		protected LoggerInterface $logger,
+	) {
 	}
 
 	/**
@@ -82,6 +74,7 @@ class RootCollection implements ICollection {
 	 * @return null|string
 	 * @throws Forbidden
 	 */
+	#[\Override]
 	public function createFile($name, $data = null) {
 		throw new Forbidden('Cannot create comments by id');
 	}
@@ -92,6 +85,7 @@ class RootCollection implements ICollection {
 	 * @param string $name
 	 * @throws Forbidden
 	 */
+	#[\Override]
 	public function createDirectory($name) {
 		throw new Forbidden('Permission denied to create collections');
 	}
@@ -106,6 +100,7 @@ class RootCollection implements ICollection {
 	 * @return \Sabre\DAV\INode
 	 * @throws NotFound
 	 */
+	#[\Override]
 	public function getChild($name) {
 		$this->initCollections();
 		if (isset($this->entityTypeCollections[$name])) {
@@ -119,6 +114,7 @@ class RootCollection implements ICollection {
 	 *
 	 * @return \Sabre\DAV\INode[]
 	 */
+	#[\Override]
 	public function getChildren() {
 		$this->initCollections();
 		assert(!is_null($this->entityTypeCollections));
@@ -131,6 +127,7 @@ class RootCollection implements ICollection {
 	 * @param string $name
 	 * @return bool
 	 */
+	#[\Override]
 	public function childExists($name) {
 		$this->initCollections();
 		assert(!is_null($this->entityTypeCollections));
@@ -142,6 +139,7 @@ class RootCollection implements ICollection {
 	 *
 	 * @throws Forbidden
 	 */
+	#[\Override]
 	public function delete() {
 		throw new Forbidden('Permission denied to delete this collection');
 	}
@@ -153,6 +151,7 @@ class RootCollection implements ICollection {
 	 *
 	 * @return string
 	 */
+	#[\Override]
 	public function getName() {
 		return $this->name;
 	}
@@ -163,6 +162,7 @@ class RootCollection implements ICollection {
 	 * @param string $name The new name
 	 * @throws Forbidden
 	 */
+	#[\Override]
 	public function setName($name) {
 		throw new Forbidden('Permission denied to rename this collection');
 	}
@@ -172,6 +172,7 @@ class RootCollection implements ICollection {
 	 *
 	 * @return ?int
 	 */
+	#[\Override]
 	public function getLastModified() {
 		return null;
 	}

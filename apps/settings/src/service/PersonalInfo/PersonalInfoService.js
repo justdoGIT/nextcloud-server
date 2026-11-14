@@ -4,13 +4,11 @@
  */
 
 import { getCurrentUser } from '@nextcloud/auth'
-import { generateOcsUrl } from '@nextcloud/router'
-import { confirmPassword } from '@nextcloud/password-confirmation'
 import axios from '@nextcloud/axios'
-
-import { SCOPE_SUFFIX } from '../../constants/AccountPropertyConstants.js'
-
-import '@nextcloud/password-confirmation/dist/style.css'
+import { confirmPassword } from '@nextcloud/password-confirmation'
+import { generateOcsUrl } from '@nextcloud/router'
+import { SCOPE_SUFFIX } from '../../constants/AccountPropertyConstants.ts'
+import { ocsData } from '../../utils/handlers.ts'
 
 /**
  * Save the primary account property value for the user
@@ -19,7 +17,7 @@ import '@nextcloud/password-confirmation/dist/style.css'
  * @param {string|boolean} value the primary value
  * @return {object}
  */
-export const savePrimaryAccountProperty = async (accountProperty, value) => {
+export async function savePrimaryAccountProperty(accountProperty, value) {
 	// TODO allow boolean values on backend route handler
 	// Convert boolean to string for compatibility
 	if (typeof value === 'boolean') {
@@ -36,7 +34,7 @@ export const savePrimaryAccountProperty = async (accountProperty, value) => {
 		value,
 	})
 
-	return res.data
+	return ocsData(res)
 }
 
 /**
@@ -46,7 +44,7 @@ export const savePrimaryAccountProperty = async (accountProperty, value) => {
  * @param {string} scope the federation scope
  * @return {object}
  */
-export const savePrimaryAccountPropertyScope = async (accountProperty, scope) => {
+export async function savePrimaryAccountPropertyScope(accountProperty, scope) {
 	const userId = getCurrentUser().uid
 	const url = generateOcsUrl('cloud/users/{userId}', { userId })
 
@@ -57,5 +55,5 @@ export const savePrimaryAccountPropertyScope = async (accountProperty, scope) =>
 		value: scope,
 	})
 
-	return res.data
+	return ocsData(res)
 }

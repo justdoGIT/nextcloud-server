@@ -15,11 +15,13 @@ use OCP\Util;
 
 /** @template-implements IEventListener<RenderReferenceEvent> */
 class RenderReferenceEventListener implements IEventListener {
+	#[\Override]
 	public function handle(Event $event): void {
 		if (!$event instanceof RenderReferenceEvent) {
 			return;
 		}
 
 		Util::addScript('files', 'reference-files');
+		Util::addStyle('files', 'reference-files');
 	}
 }

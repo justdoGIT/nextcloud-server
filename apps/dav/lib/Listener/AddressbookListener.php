@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2021 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\DAV\Listener;
 
 use OCA\DAV\CardDAV\Activity\Backend as ActivityBackend;
@@ -21,18 +22,13 @@ use function sprintf;
 
 /** @template-implements IEventListener<AddressBookCreatedEvent|AddressBookUpdatedEvent|AddressBookDeletedEvent|AddressBookShareUpdatedEvent> */
 class AddressbookListener implements IEventListener {
-	/** @var ActivityBackend */
-	private $activityBackend;
-
-	/** @var LoggerInterface */
-	private $logger;
-
-	public function __construct(ActivityBackend $activityBackend,
-		LoggerInterface $logger) {
-		$this->activityBackend = $activityBackend;
-		$this->logger = $logger;
+	public function __construct(
+		private ActivityBackend $activityBackend,
+		private LoggerInterface $logger,
+	) {
 	}
 
+	#[\Override]
 	public function handle(Event $event): void {
 		if ($event instanceof AddressBookCreatedEvent) {
 			try {

@@ -6,6 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2018 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
 namespace OCA\TwoFactorBackupCodes\Listener;
 
 use OCA\TwoFactorBackupCodes\Event\CodesGenerated;
@@ -16,13 +17,12 @@ use OCP\Notification\IManager;
 /** @template-implements IEventListener<CodesGenerated> */
 class ClearNotifications implements IEventListener {
 
-	/** @var IManager */
-	private $manager;
-
-	public function __construct(IManager $manager) {
-		$this->manager = $manager;
+	public function __construct(
+		private IManager $manager,
+	) {
 	}
 
+	#[\Override]
 	public function handle(Event $event): void {
 		if (!($event instanceof CodesGenerated)) {
 			return;

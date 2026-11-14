@@ -1,12 +1,13 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2017-2024 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2016 ownCloud, Inc.
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+
 namespace OCA\Files_Sharing\Tests\Controllers;
 
-use OC\Files\Filesystem;
 use OC\Files\Node\Folder;
 use OC\Share20\Manager;
 use OCA\FederatedFileSharing\FederatedShareProvider;
@@ -17,6 +18,7 @@ use OCP\Accounts\IAccount;
 use OCP\Accounts\IAccountManager;
 use OCP\Accounts\IAccountProperty;
 use OCP\Activity\IManager;
+use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\ContentSecurityPolicy;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\Http\Template\ExternalShareMenuAction;
@@ -29,7 +31,9 @@ use OCP\Defaults;
 use OCP\EventDispatcher\IEventDispatcher;
 use OCP\Files\File;
 use OCP\Files\IRootFolder;
+use OCP\Files\ISetupManager;
 use OCP\Files\NotFoundException;
+use OCP\Files\Template\ITemplateManager;
 use OCP\IAppConfig;
 use OCP\IConfig;
 use OCP\IL10N;
@@ -39,19 +43,22 @@ use OCP\ISession;
 use OCP\IURLGenerator;
 use OCP\IUser;
 use OCP\IUserManager;
+use OCP\IUserSession;
 use OCP\Security\ISecureRandom;
 use OCP\Server;
 use OCP\Share\Exceptions\ShareNotFound;
+use OCP\Share\IAttributes;
 use OCP\Share\IPublicShareTemplateFactory;
 use OCP\Share\IShare;
 use PHPUnit\Framework\MockObject\MockObject;
+use Test\Traits\UserTrait;
 
 /**
- * @group DB
- *
  * @package OCA\Files_Sharing\Controllers
  */
+#[\PHPUnit\Framework\Attributes\Group(name: 'DB')]
 class ShareControllerTest extends \Test\TestCase {
+	use UserTrait;
 
 	private string $user;
 	private string $oldUser;
@@ -66,6 +73,7 @@ class ShareControllerTest extends \Test\TestCase {
 	private Manager&MockObject $shareManager;
 	private IPreview&MockObject $previewManager;
 	private IUserManager&MockObject $userManager;
+	private ITemplateManager&MockObject $templateManager;
 	private IInitialState&MockObject $initialState;
 	private IURLGenerator&MockObject $urlGenerator;
 	private ISecureRandom&MockObject $secureRandom;
@@ -73,6 +81,7 @@ class ShareControllerTest extends \Test\TestCase {
 	private IEventDispatcher&MockObject $eventDispatcher;
 	private FederatedShareProvider&MockObject $federatedShareProvider;
 	private IPublicShareTemplateFactory&MockObject $publicShareTemplateFactory;
+	private IUserSession&MockObject $userSession;
 
 	protected function setUp(): void {
 		parent::setUp();
@@ -85,6 +94,7 @@ class ShareControllerTest extends \Test\TestCase {
 		$this->config = $this->createMock(IConfig::class);
 		$this->appConfig = $this->createMock(IAppConfig::class);
 		$this->userManager = $this->createMock(IUserManager::class);
+		$this->templateManager = $this->createMock(ITemplateManager::class);
 		$this->initialState = $this->createMock(IInitialState::class);
 		$this->federatedShareProvider = $this->createMock(FederatedShareProvider::class);
 		$this->federatedShareProvider->expects($this->any())
@@ -96,6 +106,7 @@ class ShareControllerTest extends \Test\TestCase {
 		$this->l10n = $this->createMock(IL10N::class);
 		$this->secureRandom = $this->createMock(ISecureRandom::class);
 		$this->defaults = $this->createMock(Defaults::class);
+		$this->userSession = $this->createMock(IUserSession::class);
 		$this->publicShareTemplateFactory = $this->createMock(IPublicShareTemplateFactory::class);
 		$this->publicShareTemplateFactory
 			->expects($this->any())
@@ -112,6 +123,7 @@ class ShareControllerTest extends \Test\TestCase {
 					$this->defaults,
 					$this->config,
 					$this->createMock(IRequest::class),
+					$this->templateManager,
 					$this->initialState,
 					$this->appConfig,
 				)
@@ -135,31 +147,30 @@ class ShareControllerTest extends \Test\TestCase {
 			$this->secureRandom,
 			$this->defaults,
 			$this->publicShareTemplateFactory,
+			$this->userSession,
 		);
-
 
 		// Store current user
 		$this->oldUser = \OC_User::getUser();
 
 		// Create a dummy user
-		$this->user = \OC::$server->getSecureRandom()->generate(12, ISecureRandom::CHAR_LOWER);
+		$this->user = Server::get(ISecureRandom::class)->generate(12, ISecureRandom::CHAR_LOWER);
 
-		\OC::$server->getUserManager()->createUser($this->user, $this->user);
-		\OC_Util::tearDownFS();
+		$this->createUser($this->user, $this->user);
+		Server::get(ISetupManager::class)->tearDown();
 		$this->loginAsUser($this->user);
 	}
 
 	protected function tearDown(): void {
-		\OC_Util::tearDownFS();
+		Server::get(ISetupManager::class)->tearDown();
 		\OC_User::setUserId('');
-		Filesystem::tearDown();
-		$user = \OC::$server->getUserManager()->get($this->user);
+		$user = Server::get(IUserManager::class)->get($this->user);
 		if ($user !== null) {
 			$user->delete();
 		}
 		\OC_User::setIncognitoMode(false);
 
-		\OC::$server->getSession()->set('public_link_authenticated', '');
+		Server::get(ISession::class)->set('public_link_authenticated', '');
 
 		// Set old user
 		\OC_User::setUserId($this->oldUser);
@@ -174,7 +185,7 @@ class ShareControllerTest extends \Test\TestCase {
 			->expects($this->once())
 			->method('getShareByToken')
 			->with('invalidtoken')
-			->will($this->throwException(new ShareNotFound()));
+			->willThrowException(new ShareNotFound());
 
 		$this->expectException(NotFoundException::class);
 
@@ -185,7 +196,7 @@ class ShareControllerTest extends \Test\TestCase {
 	public function testShowShareNotAuthenticated(): void {
 		$this->shareController->setToken('validtoken');
 
-		$share = \OC::$server->getShareManager()->newShare();
+		$share = Server::get(\OCP\Share\IManager::class)->newShare();
 		$share->setPassword('password');
 
 		$this->shareManager
@@ -199,7 +210,6 @@ class ShareControllerTest extends \Test\TestCase {
 		// Test without a not existing token
 		$this->shareController->showShare();
 	}
-
 
 	public function testShowShare(): void {
 		$note = 'personal note';
@@ -240,7 +250,7 @@ class ShareControllerTest extends \Test\TestCase {
 		/** @var Manager */
 		$manager = Server::get(Manager::class);
 		$share = $manager->newShare();
-		$share->setId(42)
+		$share->setId('42')
 			->setPermissions(Constants::PERMISSION_READ | Constants::PERMISSION_UPDATE)
 			->setPassword('password')
 			->setShareOwner('ownerUID')
@@ -260,8 +270,12 @@ class ShareControllerTest extends \Test\TestCase {
 				['files_sharing.sharecontroller.showShare', ['token' => 'token'], 'shareUrl'],
 				// this share is not an image to the default preview is used
 				['files_sharing.PublicPreview.getPreview', ['x' => 256, 'y' => 256, 'file' => $share->getTarget(), 'token' => 'token'], 'previewUrl'],
-				// for the direct link
-				['files_sharing.sharecontroller.downloadShare', ['token' => 'token', 'filename' => $filename ], 'downloadUrl'],
+			]);
+
+		$this->urlGenerator->expects($this->once())
+			->method('getAbsoluteURL')
+			->willReturnMap([
+				['/public.php/dav/files/token/?accept=zip', 'downloadUrl'],
 			]);
 
 		$this->previewManager->method('isMimeSupported')->with('text/plain')->willReturn(true);
@@ -329,6 +343,10 @@ class ShareControllerTest extends \Test\TestCase {
 			'filename' => $filename,
 			'view' => $view,
 			'fileId' => 111,
+			'owner' => 'ownerUID',
+			'ownerDisplayName' => 'ownerDisplay',
+			'isFileRequest' => false,
+			'templates' => [],
 		];
 
 		$response = $this->shareController->showShare();
@@ -338,6 +356,7 @@ class ShareControllerTest extends \Test\TestCase {
 		$csp = new ContentSecurityPolicy();
 		$csp->addAllowedFrameDomain('\'self\'');
 		$expectedResponse = new PublicTemplateResponse('files', 'index');
+		$expectedResponse->setParams(['pageTitle' => $filename]);
 		$expectedResponse->setContentSecurityPolicy($csp);
 		$expectedResponse->setHeaderTitle($filename);
 		$expectedResponse->setHeaderDetails('shared by ownerDisplay');
@@ -369,6 +388,7 @@ class ShareControllerTest extends \Test\TestCase {
 		$file->method('isReadable')->willReturn(true);
 		$file->method('isShareable')->willReturn(true);
 		$file->method('getId')->willReturn(1234);
+		$file->method('getMimetype')->willReturn('text/plain');
 		$file->method('getName')->willReturn($filename);
 
 		$accountName = $this->createMock(IAccountProperty::class);
@@ -386,11 +406,13 @@ class ShareControllerTest extends \Test\TestCase {
 		/** @var Manager */
 		$manager = Server::get(Manager::class);
 		$share = $manager->newShare();
-		$share->setId(42)
+		$share->setId('42')
 			->setPermissions(Constants::PERMISSION_CREATE)
 			->setPassword('password')
 			->setShareOwner('ownerUID')
 			->setSharedBy('initiatorUID')
+			->setNote('The note')
+			->setLabel('A label')
 			->setNode($file)
 			->setTarget("/$filename")
 			->setToken('token');
@@ -468,6 +490,12 @@ class ShareControllerTest extends \Test\TestCase {
 			'filename' => $filename,
 			'view' => 'public-file-drop',
 			'disclaimer' => 'My disclaimer text',
+			'owner' => 'ownerUID',
+			'ownerDisplayName' => 'ownerDisplay',
+			'isFileRequest' => false,
+			'note' => 'The note',
+			'label' => 'A label',
+			'templates' => [],
 		];
 
 		$response = $this->shareController->showShare();
@@ -477,8 +505,9 @@ class ShareControllerTest extends \Test\TestCase {
 		$csp = new ContentSecurityPolicy();
 		$csp->addAllowedFrameDomain('\'self\'');
 		$expectedResponse = new PublicTemplateResponse('files', 'index');
+		$expectedResponse->setParams(['pageTitle' => 'A label']);
 		$expectedResponse->setContentSecurityPolicy($csp);
-		$expectedResponse->setHeaderTitle($filename);
+		$expectedResponse->setHeaderTitle('A label');
 		$expectedResponse->setHeaderDetails('shared by ownerDisplay');
 		$expectedResponse->setHeaderActions([
 			new LinkMenuAction($this->l10n->t('Direct link'), 'icon-public', 'shareUrl'),
@@ -525,7 +554,7 @@ class ShareControllerTest extends \Test\TestCase {
 
 		/** @var IShare */
 		$share = Server::get(Manager::class)->newShare();
-		$share->setId(42);
+		$share->setId('42');
 		$share->setPassword('password')
 			->setShareOwner('ownerUID')
 			->setSharedBy('initiatorUID')
@@ -545,8 +574,12 @@ class ShareControllerTest extends \Test\TestCase {
 				['files_sharing.sharecontroller.showShare', ['token' => 'token'], 'shareUrl'],
 				// this share is not an image to the default preview is used
 				['files_sharing.PublicPreview.getPreview', ['x' => 256, 'y' => 256, 'file' => $share->getTarget(), 'token' => 'token'], 'previewUrl'],
-				// for the direct link
-				['files_sharing.sharecontroller.downloadShare', ['token' => 'token', 'filename' => $filename ], 'downloadUrl'],
+			]);
+
+		$this->urlGenerator->expects($this->once())
+			->method('getAbsoluteURL')
+			->willReturnMap([
+				['/public.php/dav/files/token/?accept=zip', 'downloadUrl'],
 			]);
 
 		$this->previewManager->method('isMimeSupported')->with('text/plain')->willReturn(true);
@@ -591,9 +624,9 @@ class ShareControllerTest extends \Test\TestCase {
 
 		$this->l10n->expects($this->any())
 			->method('t')
-			->will($this->returnCallback(function ($text, $parameters) {
+			->willReturnCallback(function ($text, $parameters) {
 				return vsprintf($text, $parameters);
-			}));
+			});
 
 		$this->defaults->expects(self::any())
 			->method('getProductName')
@@ -604,6 +637,7 @@ class ShareControllerTest extends \Test\TestCase {
 		$csp = new ContentSecurityPolicy();
 		$csp->addAllowedFrameDomain('\'self\'');
 		$expectedResponse = new PublicTemplateResponse('files', 'index');
+		$expectedResponse->setParams(['pageTitle' => $filename]);
 		$expectedResponse->setContentSecurityPolicy($csp);
 		$expectedResponse->setHeaderTitle($filename);
 		$expectedResponse->setHeaderDetails('');
@@ -616,7 +650,6 @@ class ShareControllerTest extends \Test\TestCase {
 		$this->assertEquals($expectedResponse, $response);
 	}
 
-
 	public function testShowShareInvalid(): void {
 		$this->expectException(NotFoundException::class);
 
@@ -627,15 +660,15 @@ class ShareControllerTest extends \Test\TestCase {
 		$owner->method('getDisplayName')->willReturn('ownerDisplay');
 		$owner->method('getUID')->willReturn('ownerUID');
 
-		$file = $this->getMockBuilder('OCP\Files\File')->getMock();
+		$file = $this->getMockBuilder(File::class)->getMock();
 		$file->method('getName')->willReturn($filename);
 		$file->method('getMimetype')->willReturn('text/plain');
 		$file->method('getSize')->willReturn(33);
 		$file->method('isShareable')->willReturn(false);
 		$file->method('isReadable')->willReturn(true);
 
-		$share = \OC::$server->getShareManager()->newShare();
-		$share->setId(42);
+		$share = Server::get(\OCP\Share\IManager::class)->newShare();
+		$share->setId('42');
 		$share->setPassword('password')
 			->setShareOwner('ownerUID')
 			->setNode($file)
@@ -662,7 +695,9 @@ class ShareControllerTest extends \Test\TestCase {
 			->with('token')
 			->willReturn($share);
 
-		$this->userManager->method('get')->with('ownerUID')->willReturn($owner);
+		$this->userManager->method('get')
+			->with('ownerUID')
+			->willReturn($owner);
 
 		$this->shareController->showShare();
 	}
@@ -670,6 +705,7 @@ class ShareControllerTest extends \Test\TestCase {
 	public function testDownloadShareWithCreateOnlyShare(): void {
 		$share = $this->getMockBuilder(IShare::class)->getMock();
 		$share->method('getPassword')->willReturn('password');
+		$share->method('isPasswordProtected')->willReturn(true);
 		$share
 			->expects($this->once())
 			->method('getPermissions')
@@ -683,7 +719,36 @@ class ShareControllerTest extends \Test\TestCase {
 
 		// Test with a password protected share and no authentication
 		$response = $this->shareController->downloadShare('validtoken');
-		$expectedResponse = new DataResponse('Share has no read permission');
+		$expectedResponse = new DataResponse('Share has no read permission', Http::STATUS_FORBIDDEN);
+		$this->assertEquals($expectedResponse, $response);
+	}
+
+	public function testDownloadShareWithoutDownloadPermission(): void {
+		$attributes = $this->createMock(IAttributes::class);
+		$attributes->expects(self::once())
+			->method('getAttribute')
+			->with('permissions', 'download')
+			->willReturn(false);
+
+		$share = $this->createMock(IShare::class);
+		$share->method('getPassword')->willReturn('password');
+		$share->method('isPasswordProtected')->willReturn(true);
+		$share->expects(self::once())
+			->method('getPermissions')
+			->willReturn(Constants::PERMISSION_READ);
+		$share->expects(self::once())
+			->method('getAttributes')
+			->willReturn($attributes);
+
+		$this->shareManager
+			->expects(self::once())
+			->method('getShareByToken')
+			->with('validtoken')
+			->willReturn($share);
+
+		// Test with a password protected share and no authentication
+		$response = $this->shareController->downloadShare('validtoken');
+		$expectedResponse = new DataResponse('Share has no download permission', Http::STATUS_FORBIDDEN);
 		$this->assertEquals($expectedResponse, $response);
 	}
 
@@ -699,8 +764,8 @@ class ShareControllerTest extends \Test\TestCase {
 		/* @var MockObject|Folder $folder */
 		$folder = $this->createMock(Folder::class);
 
-		$share = \OC::$server->getShareManager()->newShare();
-		$share->setId(42);
+		$share = Server::get(\OCP\Share\IManager::class)->newShare();
+		$share->setId('42');
 		$share->setPermissions(Constants::PERMISSION_CREATE)
 			->setShareOwner('ownerUID')
 			->setSharedBy('initiatorUID')
@@ -740,8 +805,8 @@ class ShareControllerTest extends \Test\TestCase {
 		/* @var MockObject|Folder $folder */
 		$folder = $this->createMock(Folder::class);
 
-		$share = \OC::$server->getShareManager()->newShare();
-		$share->setId(42);
+		$share = Server::get(\OCP\Share\IManager::class)->newShare();
+		$share->setId('42');
 		$share->setPermissions(Constants::PERMISSION_CREATE)
 			->setShareOwner('ownerUID')
 			->setSharedBy('initiatorUID')
